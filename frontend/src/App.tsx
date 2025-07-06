@@ -6,6 +6,7 @@ import { PositionTable } from './components/PositionTable';
 import { ClientView } from './components/ClientView';
 import { AuthModal } from './components/AuthModal';
 import { RegisterManagerModal } from './components/RegisterManagerModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal'
 import { Project } from './types';
 
 import {
@@ -35,6 +36,8 @@ function App() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [registerSuccessUsername, setRegisterSuccessUsername] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+
 
   const loadedRef = useRef(false);
 
@@ -156,19 +159,22 @@ function App() {
 
   // Обработчик успешного логина
   const handleLoginSuccess = (token: string, isTemp: boolean) => {
-    setAuthToken(token);
-    setIsTemporaryPassword(isTemp);
-    localStorage.setItem('token', token);
+	  setAuthToken(token);
+	  setIsTemporaryPassword(isTemp);
+	  localStorage.setItem('token', token);
 
-    try {
-      const decoded = jwt_decode<JwtPayload>(token);
-      setUserRole(decoded.role);
-    } catch {
-      setUserRole(null);
-    }
+	  try {
+	    const decoded = jwt_decode<JwtPayload>(token);
+	    setUserRole(decoded.role);
+	  } catch {
+	    setUserRole(null);
+	  }
 
-    // Здесь можно загрузить проекты или другую логику
-  };
+	  if (isTemp) {
+	    setShowChangePasswordModal(true);
+	  }
+	};
+
 
 
   // Логика выхода
@@ -253,6 +259,20 @@ function App() {
     {isAuthOpen && (
       <AuthModal onClose={closeAuth} onLoginSuccess={handleLoginSuccess} />
     )}
+
+    {/* Модалка смены пароля */}
+	{showChangePasswordModal && authToken && (
+	  <ChangePasswordModal
+	    token={authToken}
+	    onClose={() => setShowChangePasswordModal(false)}
+	    onPasswordChanged={() => {
+	      setIsTemporaryPassword(false);
+	      alert('Пароль успешно изменён. Пожалуйста, войдите снова.');
+	      handleLogout(); // или обновите токен, если хотите
+	    }}
+	  />
+	)}
+
 
     {/* Основной контент */}
 

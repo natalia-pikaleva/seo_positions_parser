@@ -161,7 +161,24 @@ export async function registerManager(data: RegisterManagerRequest, token: strin
   }
 }
 
-// utils/api.ts
+export async function changePassword(token: string, data: { old_password: string; new_password: string }) {
+  const response = await fetch(`${API_BASE}/auth/change-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Ошибка смены пароля');
+  }
+
+  return await response.json();
+}
+
 
 export async function exportPositionsExcel(
   projectId: string,
