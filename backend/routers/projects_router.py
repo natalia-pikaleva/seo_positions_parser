@@ -4,6 +4,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+from datetime import datetime, timedelta, date
+import logging
 
 from database.db_init import get_db
 from database.models import Project, Keyword, Position
@@ -11,8 +16,6 @@ from routers.schemas import ProjectCreate, ProjectUpdate, KeywordUpdate, Project
     PositionOut, KeywordCreate, KeywordUpdate, KeywordOut
 from services.task import parse_positions_task
 from services.api_utils import generate_client_link
-from datetime import datetime, timedelta
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +26,15 @@ router = APIRouter()
 
 @router.get("/", response_model=List[ProjectOut])
 async def get_projects(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Project).options(selectinload(Project.keywords))
-    )
-    projects = result.scalars().all()
-    return projects
+    try:
+        result = await db.execute(
+            select(Project).options(selectinload(Project.keywords))
+        )
+        projects = result.scalars().all()
+        return projects
+    except Exception as e:
+        logging.error("Failed to get projects: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get projects")
 
 
 @router.post("/", response_model=ProjectOut, status_code=201)
@@ -57,55 +64,75 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
         logger.info(f"project.created_at: {project.created_at}, project.client_link: {project.client_link}")
 
         return project
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error("Failed to create project: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create project")
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Project)
-        .options(selectinload(Project.keywords))  # жёсткая загрузка ключевых слов
-        .where(Project.id == project_id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    try:
+        result = await db.execute(
+            select(Project)
+            .options(selectinload(Project.keywords))  # жёсткая загрузка ключевых слов
+            .where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to get project by id: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get project by id")
 
 
 @router.put("/{project_id}", response_model=ProjectOut)
 async def update_project(project_id: UUID, project_in: ProjectUpdate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Project)
-        .options(selectinload(Project.keywords))  # жёсткая загрузка ключевых слов
-        .where(Project.id == project_id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        result = await db.execute(
+            select(Project)
+            .options(selectinload(Project.keywords))  # жёсткая загрузка ключевых слов
+            .where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-    update_data = project_in.dict(exclude_unset=True, by_alias=False)
-    # Убираем ключевые слова из обновления
-    update_data.pop("keywords", None)
+        update_data = project_in.dict(exclude_unset=True, by_alias=False)
+        # Убираем ключевые слова из обновления
+        update_data.pop("keywords", None)
 
-    for key, value in update_data.items():
-        setattr(project, key, value)
+        for key, value in update_data.items():
+            setattr(project, key, value)
 
-    await db.commit()
-    await db.refresh(project)
-    return project
+        await db.commit()
+        await db.refresh(project)
+        return project
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to update project: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update project")
 
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    await db.delete(project)
-    await db.commit()
-    return
+    try:
+        project = await db.get(Project, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        await db.delete(project)
+        await db.commit()
+        return
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to delete project: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to delete project")
 
 
 # --- Ключевые слова и позиции ---
@@ -113,9 +140,13 @@ async def delete_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{project_id}/keywords", response_model=List[KeywordOut])
 async def get_keywords(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
-    keywords = result.scalars().all()
-    return keywords
+    try:
+        result = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
+        keywords = result.scalars().all()
+        return keywords
+    except Exception as e:
+        logging.error("Failed to get keywords: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get keywords")
 
 
 @router.post("/{project_id}/keywords", response_model=KeywordOut)
@@ -124,50 +155,63 @@ async def create_keyword(
         keyword_in: KeywordCreate,
         db: AsyncSession = Depends(get_db)
 ):
-    # Проверяем, что проект существует
-    project = await db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        # Проверяем, что проект существует
+        project = await db.get(Project, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-    # Создаём новое ключевое слово
-    new_keyword = Keyword(
-        project_id=project_id,
-        keyword=keyword_in.keyword,
-        price_top_1_3=keyword_in.price_top_1_3,
-        price_top_4_5=keyword_in.price_top_4_5,
-        price_top_6_10=keyword_in.price_top_6_10,
-    )
-    db.add(new_keyword)
-    await db.commit()
-    await db.refresh(new_keyword)
+        # Создаём новое ключевое слово
+        new_keyword = Keyword(
+            project_id=project_id,
+            keyword=keyword_in.keyword,
+            region=keyword_in.region,
+            price_top_1_3=keyword_in.price_top_1_3,
+            price_top_4_5=keyword_in.price_top_4_5,
+            price_top_6_10=keyword_in.price_top_6_10,
+        )
+        db.add(new_keyword)
+        await db.commit()
+        await db.refresh(new_keyword)
 
-    return new_keyword
+        return new_keyword
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to create keyword: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create keyword")
 
 
 @router.put("/{project_id}/keywords/{keyword_id}", response_model=KeywordOut)
 async def update_keyword(
         project_id: UUID,
         keyword_id: UUID,
-        keyword_in: KeywordUpdate = Depends(),
+        keyword_in: KeywordUpdate,
         db: AsyncSession = Depends(get_db)
 ):
-    keyword = await db.get(Keyword, keyword_id)
-    if keyword is None or keyword.project_id != project_id:
-        raise HTTPException(status_code=404, detail="Keyword not found in project")
+    try:
+        keyword = await db.get(Keyword, keyword_id)
+        if keyword is None or keyword.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Keyword not found in project")
 
-    update_data = keyword_in.dict(exclude_unset=True, by_alias=False)
-    for key, value in update_data.items():
-        if key != "id":
-            setattr(keyword, key, value)
+        update_data = keyword_in.dict(exclude_unset=True, by_alias=False)
+        for key, value in update_data.items():
+            if key != "id":
+                setattr(keyword, key, value)
 
-    await db.commit()
-    await db.refresh(keyword)
+        await db.commit()
+        await db.refresh(keyword)
 
-    return keyword
+        return keyword
 
-    result = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
-    keywords = result.scalars().all()
-    return keywords
+        result = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
+        keywords = result.scalars().all()
+        return keywords
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to update keyword: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update keyword")
 
 
 @router.delete("/{project_id}/keywords/{keyword_id}", status_code=204)
@@ -176,27 +220,39 @@ async def delete_keyword(
         keyword_id: UUID,
         db: AsyncSession = Depends(get_db)
 ):
-    # Проверяем, что ключевое слово существует и принадлежит проекту
-    keyword = await db.get(Keyword, keyword_id)
-    if not keyword or keyword.project_id != project_id:
-        raise HTTPException(status_code=404, detail="Keyword not found in project")
+    try:
+        # Проверяем, что ключевое слово существует и принадлежит проекту
+        keyword = await db.get(Keyword, keyword_id)
+        if not keyword or keyword.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Keyword not found in project")
 
-    await db.delete(keyword)
-    await db.commit()
-    return
+        await db.delete(keyword)
+        await db.commit()
+        return
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to delete keyword: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to delete keyword")
 
 
 # --- Запуск обновления позиций (парсер) ---
 
 @router.post("/{project_id}/check")
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        project = await db.get(Project, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-    logger.info(f"Запуск задачи parse_positions_task для проекта {project_id}")
-    # parse_positions_task.delay(str(project_id))
-    return {"message": "Парсер запущен через Celery"}
+        logger.info(f"Запуск задачи parse_positions_task для проекта {project_id}")
+        # parse_positions_task.delay(str(project_id))
+        return {"message": "Парсер запущен через Celery"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to check project: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to check project")
 
 
 # --- Получение позиций с фильтром по периоду ---
@@ -209,55 +265,133 @@ async def get_positions(
         offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
         db: AsyncSession = Depends(get_db)
 ):
-    now = datetime.utcnow()
+    try:
+        now = datetime.utcnow()
 
-    if period == "week":
-        # Находим понедельник текущей недели
-        current_weekday = now.weekday()  # 0 - понедельник, 6 - воскресенье
-        # Начало текущей недели (понедельник)
-        start_of_current_week = datetime(now.year, now.month, now.day) - timedelta(days=current_weekday)
-        # Сдвигаем на offset недель
-        start_date = start_of_current_week + timedelta(weeks=offset)
-        end_date = start_date + timedelta(weeks=1)
+        if period == "week":
+            # Находим понедельник текущей недели
+            current_weekday = now.weekday()  # 0 - понедельник, 6 - воскресенье
+            # Начало текущей недели (понедельник)
+            start_of_current_week = datetime(now.year, now.month, now.day) - timedelta(days=current_weekday)
+            # Сдвигаем на offset недель
+            start_date = start_of_current_week + timedelta(weeks=offset)
+            end_date = start_date + timedelta(weeks=1)
 
-    elif period == "month":
-        # Начало текущего месяца
-        start_of_current_month = datetime(now.year, now.month, 1)
-        # Рассчитываем месяц с учётом offset
-        month = (start_of_current_month.month - 1) + offset
-        year = start_of_current_month.year + month // 12
-        month = month % 12 + 1
-        start_date = datetime(year, month, 1)
-        # Начало следующего месяца
-        if month == 12:
-            end_date = datetime(year + 1, 1, 1)
+        elif period == "month":
+            # Начало текущего месяца
+            start_of_current_month = datetime(now.year, now.month, 1)
+            # Рассчитываем месяц с учётом offset
+            month = (start_of_current_month.month - 1) + offset
+            year = start_of_current_month.year + month // 12
+            month = month % 12 + 1
+            start_date = datetime(year, month, 1)
+            # Начало следующего месяца
+            if month == 12:
+                end_date = datetime(year + 1, 1, 1)
+            else:
+                end_date = datetime(year, month + 1, 1)
+
         else:
-            end_date = datetime(year, month + 1, 1)
+            # Для произвольного периода можно вернуть все данные или добавить дополнительные параметры
+            start_date = None
+            end_date = None
 
-    else:
-        # Для произвольного периода можно вернуть все данные или добавить дополнительные параметры
-        start_date = None
-        end_date = None
+        stmt = select(Position).join(Position.keyword).where(Keyword.project_id == project_id)
 
-    stmt = select(Position).join(Position.keyword).where(Keyword.project_id == project_id)
+        if start_date and end_date:
+            stmt = stmt.where(Position.checked_at >= start_date, Position.checked_at < end_date)
 
-    if start_date and end_date:
-        stmt = stmt.where(Position.checked_at >= start_date, Position.checked_at < end_date)
+        stmt = stmt.options(selectinload(Position.keyword))
 
-    stmt = stmt.options(selectinload(Position.keyword))
-
-    result = await db.execute(stmt)
-    positions = result.scalars().all()
-    return positions
+        result = await db.execute(stmt)
+        positions = result.scalars().all()
+        return positions
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to get positions by period: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get positions by period")
 
 
 # --- Экспорт в Excel ---
 
-@router.get("/{project_id}/export")
-async def export_excel(project_id: UUID, period: Optional[str] = Query("week")):
-    # Логика генерации Excel-файла с позициями за период
-    # Возвращать StreamingResponse с файлом
-    pass
+
+@router.get("/{project_id}/positions/export")
+async def export_positions_excel(
+        project_id: UUID,
+        start_date: date = Query(..., description="Начальная дата периода"),
+        end_date: date = Query(..., description="Конечная дата периода"),
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        if start_date > end_date:
+            raise HTTPException(status_code=400, detail="start_date не может быть больше end_date")
+
+        project = await db.get(Project, project_id)
+        if not project:
+            logger.error("Project not found")
+            raise HTTPException(status_code=404, detail="Проект не найден")
+
+        # Запрос позиций с загрузкой связанных ключевых слов и проектов
+        stmt = (
+            select(Position)
+            .join(Position.keyword)
+            .join(Keyword.project)
+            .options(
+                selectinload(Position.keyword).selectinload(Keyword.project)
+            )
+            .where(Project.id == project_id)
+            .where(Position.checked_at >= datetime.combine(start_date, datetime.min.time()))
+            .where(Position.checked_at <= datetime.combine(end_date, datetime.max.time()))
+            .order_by(Position.checked_at)
+        )
+
+        result = await db.execute(stmt)
+        positions = result.scalars().all()
+
+        if not positions:
+            logger.error("Positions not found")
+            raise HTTPException(status_code=404, detail="Данные за указанный период не найдены")
+
+        data = []
+        for pos in positions:
+            project = pos.keyword.project
+            data.append({
+                "Проект": project.domain,
+                "Поисковая система": project.search_engine.value if project.search_engine else None,
+                "Ключевое слово": pos.keyword.keyword,
+                "Город": pos.keyword.region,
+                "Дата": pos.checked_at.strftime("%Y-%m-%d"),
+                "Позиция": pos.position,
+                "Динамика": pos.previous_position,
+                "Тренд": pos.trend.value if pos.trend else None,
+                "Стоимость": pos.cost,
+            })
+
+        df = pd.DataFrame(data)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Positions")
+
+        output.seek(0)
+
+        filename = f"positions_{project_id}_{start_date}_{end_date}.xlsx"
+
+        headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+
+        return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to export positions excel: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to export positions excel")
 
 
 # --- Клиентский просмотр ---
@@ -268,30 +402,36 @@ async def client_view(
         period: Optional[str] = Query("week", regex="^(week|month|custom)$"),
         db: AsyncSession = Depends(get_db)
 ):
-    # Вычисляем дату начала периода для фильтрации позиций
-    now = datetime.utcnow()
-    if period == "week":
-        start_date = now - timedelta(days=7)
-    elif period == "month":
-        start_date = now - timedelta(days=30)
-    else:
-        # Для произвольного периода можно принимать дополнительные параметры, например start_date и end_date
-        start_date = None
+    try:
+        # Вычисляем дату начала периода для фильтрации позиций
+        now = datetime.utcnow()
+        if period == "week":
+            start_date = now - timedelta(days=7)
+        elif period == "month":
+            start_date = now - timedelta(days=30)
+        else:
+            # Для произвольного периода можно принимать дополнительные параметры, например start_date и end_date
+            start_date = None
 
-    # Получаем проект по уникальной клиентской ссылке, вместе с ключевыми словами
-    result = await db.execute(
-        select(Project)
-        .options(selectinload(Project.keywords).selectinload(Keyword.positions))
-        .where(Project.client_link == client_link)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Проект не найден")
+        # Получаем проект по уникальной клиентской ссылке, вместе с ключевыми словами
+        result = await db.execute(
+            select(Project)
+            .options(selectinload(Project.keywords).selectinload(Keyword.positions))
+            .where(Project.client_link == client_link)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Проект не найден")
 
-    # Фильтруем позиции по периоду (если задан start_date)
-    if start_date:
-        for keyword in project.keywords:
-            keyword.positions = [pos for pos in keyword.positions if pos.checked_at >= start_date]
+        # Фильтруем позиции по периоду (если задан start_date)
+        if start_date:
+            for keyword in project.keywords:
+                keyword.positions = [pos for pos in keyword.positions if pos.checked_at >= start_date]
 
-    # Возвращаем проект с отфильтрованными позициями
-    return project
+        # Возвращаем проект с отфильтрованными позициями
+        return project
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("Failed to get positions by client link: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get positions by client link")

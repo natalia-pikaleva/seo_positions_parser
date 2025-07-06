@@ -20,9 +20,11 @@ import {
   createKeyword,
   updateKeyword,
   deleteKeyword,
+  exportPositionsExcel
 } from '../utils/api';
 import { KeywordManager } from './KeywordManager';
 import { EditProjectMenu } from './EditProjectMenu';
+import { ExportModal } from './ExportModal';
 
 interface PositionTableProps {
   project: Project;
@@ -73,6 +75,8 @@ export const PositionTable: React.FC<PositionTableProps> = ({
   const [editableProject, setEditableProject] = useState<Project>(project);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [periodOffset, setPeriodOffset] = useState(0);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     setEditableProject(project);
@@ -188,6 +192,27 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  }
 	};
 
+  const handleExport = async (startDate: string, endDate: string) => {
+	  setIsExporting(true);
+	  try {
+	    const blob = await exportPositionsExcel(project.id, startDate, endDate);
+	    const url = window.URL.createObjectURL(blob);
+	    const a = document.createElement('a');
+	    a.href = url;
+	    a.download = `positions_${project.id}_${startDate}_${endDate}.xlsx`; // обязательно download!
+	    document.body.appendChild(a);
+	    a.click();
+	    a.remove();
+	    window.URL.revokeObjectURL(url);
+	    setIsExportOpen(false);
+	  } catch (error) {
+	    alert((error as Error).message || 'Ошибка при экспорте');
+	  } finally {
+	    setIsExporting(false);
+	  }
+	};
+
+
 
   return (
     <div className="space-y-6">
@@ -218,25 +243,32 @@ export const PositionTable: React.FC<PositionTableProps> = ({
               Редактировать проект
             </button>
 
-            <a
-              href={generateClientLink(editableProject.clientLink)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Открыть для клиента
-            </a>
-
             <button
-              onClick={() => runPositionCheck(editableProject.id)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
-            >
-              <BarChart3 className="w-4 h-4" />
-              Проверить сейчас
-            </button>
-          </div>
-        </div>
+		        onClick={() => setIsExportOpen(true)}
+		        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+		        disabled={isExporting}
+		      >
+		        <Calendar className="w-4 h-4" />
+		        {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
+		    </button>
+
+		    <button
+		        onClick={() => runPositionCheck(editableProject.id)}
+		        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+		      >
+		        <BarChart3 className="w-4 h-4" />
+		        Проверить сейчас
+		    </button>
+		    </div>
+		  </div>
+
+		  {/* Модальное окно экспорта */}
+		  {isExportOpen && (
+		    <ExportModal
+		      onClose={() => setIsExportOpen(false)}
+		      onExport={handleExport}
+		    />
+		  )}
 
         {/* Статистика */}
         <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
