@@ -13,3 +13,6 @@ selenium
 passlib
 python-jose[cryptography]
 bcrypt
+pandas
+openpyxl
+

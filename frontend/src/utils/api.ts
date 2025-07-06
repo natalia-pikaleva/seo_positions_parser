@@ -160,3 +160,28 @@ export async function registerManager(data: RegisterManagerRequest, token: strin
     throw new Error(errorData.detail || 'Ошибка регистрации менеджера');
   }
 }
+
+// utils/api.ts
+
+export async function exportPositionsExcel(
+  projectId: string,
+  startDate: string, // формат 'YYYY-MM-DD'
+  endDate: string
+): Promise<Blob> {
+  const url = new URL(`${API_BASE}/projects/${projectId}/positions/export`);
+  url.searchParams.append('start_date', startDate);
+  url.searchParams.append('end_date', endDate);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ошибка при экспорте: ${response.statusText}`);
+  }
+
+  return await response.blob();
+}

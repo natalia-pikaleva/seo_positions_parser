@@ -74,6 +74,8 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       return;
     }
 
+    console.log('Saving keyword:', editingKeyword?.id, formState);
+
     try {
       if (isAdding) {
         await onAddKeyword({

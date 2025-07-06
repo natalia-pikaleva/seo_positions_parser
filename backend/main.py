@@ -11,8 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="SEO Position parser")
-app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
-app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 origins = [
     "http://localhost:5173",
@@ -26,6 +24,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 
 # Создание таблиц (запускайте один раз)
