@@ -1,0 +1,15 @@
+fastapi[all]
+sqlalchemy[asyncio]
+asyncpg
+alembic
+redis
+requests
+bs4
+psycopg2
+celery
+billiard
+selenium
+2captcha-python
+passlib
+python-jose[cryptography]
+bcrypt
