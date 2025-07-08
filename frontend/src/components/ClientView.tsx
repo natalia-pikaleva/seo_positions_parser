@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, Calendar, TrendingUp, Minus } from 'lucide-react';
+import { BarChart3, Calendar, TrendingUp, Minus, Star } from 'lucide-react';
 import { Project, FilterOptions, Position } from '../types';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { fetchPositions } from '../utils/api';
@@ -103,7 +103,13 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 	  );
 	}, [positions]);
 
-	const uniqueKeywordsWithTop10 = useMemo(() => {
+  const uniqueKeywordsWithTop5 = useMemo(() => {
+    return new Set(
+      positions.filter(pos => pos.position && pos.position <= 5).map(pos => pos.keyword_id)
+	  );
+	}, [positions]);
+
+  const uniqueKeywordsWithTop10 = useMemo(() => {
 	  return new Set(
 	    positions.filter(pos => pos.position && pos.position <= 10).map(pos => pos.keyword_id)
 	  );
@@ -135,35 +141,35 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
           </div>
 
           <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div className="bg-gradient-to-r from-green-50 to-green-100 p-6 rounded-lg">
-              <div className="flex items-center gap-3 mb-2">
-                <TrendingUp className="w-6 h-6 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">В ТОП-3</span>
-              </div>
-              <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop3.size}</div>
-              <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
+          <div className="bg-gradient-to-r from-green-50 to-green-100 p-6 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <TrendingUp className="w-6 h-6 text-green-600" />
+              <span className="text-sm font-medium text-gray-700">В ТОП-3</span>
             </div>
-
-            <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg">
-              <div className="flex items-center gap-3 mb-2">
-                <Minus className="w-6 h-6 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">В ТОП-10</span>
-              </div>
-              <div className="text-3xl font-bold text-yellow-600 mb-1">{uniqueKeywordsWithTop10.size}</div>
-              <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
-            </div>
-
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg">
-              <div className="flex items-center gap-3 mb-2">
-                <Calendar className="w-6 h-6 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Дата проверки</span>
-              </div>
-              <div className="text-lg font-bold text-blue-600 mb-1">
-                {latestCheckDate ? latestCheckDate.toLocaleDateString('ru-RU') : 'Нет данных'}
-              </div>
-              <div className="text-sm text-gray-600">Автоматически</div>
-            </div>
+            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop3.size}</div>
+            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
           </div>
+
+           <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <Star  className="w-6 h-6 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">В ТОП-5</span>
+            </div>
+            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop5.size}</div>
+            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
+          </div>
+
+          <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <Minus className="w-6 h-6 text-yellow-600" />
+              <span className="text-sm font-medium text-gray-700">В ТОП-10</span>
+            </div>
+            <div className="text-3xl font-bold text-yellow-600 mb-1">{uniqueKeywordsWithTop10.size}</div>
+            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
+          </div>
+        </div>
+
+
 
           {/* Фильтр по периоду и ключевому слову */}
           <div className="flex items-center gap-4 mb-6">

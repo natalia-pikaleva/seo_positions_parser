@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   Calendar,
+  Star
 } from 'lucide-react';
 import { Project, FilterOptions, Position } from '../types';
 import {
@@ -142,6 +143,15 @@ export const PositionTable: React.FC<PositionTableProps> = ({
     );
   }, [positions]);
 
+  const uniqueKeywordsWithTop5 = useMemo(() => {
+    return new Set(
+      positions
+        .filter((pos) => pos.position && pos.position <= 5)
+        .map((pos) => pos.keyword_id)
+    );
+  }, [positions]);
+
+
   const uniqueKeywordsWithTop10 = useMemo(() => {
     return new Set(
       positions
@@ -252,13 +262,13 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 		        {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
 		    </button>
 
-		    <button
+		    {/*}<button
 		        onClick={() => runPositionCheck(editableProject.id)}
 		        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
 		      >
 		        <BarChart3 className="w-4 h-4" />
 		        Проверить сейчас
-		    </button>
+		    </button>*/}
 		    </div>
 		  </div>
 
@@ -281,6 +291,15 @@ export const PositionTable: React.FC<PositionTableProps> = ({
             <div className="text-sm text-gray-600">из {editableProject.keywords.length} запросов</div>
           </div>
 
+           <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <Star  className="w-6 h-6 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">В ТОП-5</span>
+            </div>
+            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop5.size}</div>
+            <div className="text-sm text-gray-600">из {editableProject.keywords.length} запросов</div>
+          </div>
+
           <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg">
             <div className="flex items-center gap-3 mb-2">
               <Minus className="w-6 h-6 text-yellow-600" />
@@ -290,16 +309,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
             <div className="text-sm text-gray-600">из {editableProject.keywords.length} запросов</div>
           </div>
 
-          <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <Calendar className="w-6 h-6 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">Дата проверки</span>
-            </div>
-            <div className="text-lg font-bold text-blue-600 mb-1">
-              {latestCheckDate ? latestCheckDate.toLocaleDateString('ru-RU') : 'Нет данных'}
-            </div>
-            <div className="text-sm text-gray-600">Автоматически</div>
-          </div>
+
         </div>
 
         {/* Фильтры */}
