@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { jwtDecode } from 'jwt-decode';
 
 import { Dashboard } from './components/Dashboard';
 import { ProjectForm } from './components/ProjectForm';
@@ -42,39 +43,72 @@ function App() {
   const loadedRef = useRef(false);
 
   // Загрузка данных при монтировании
+
+
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
+	  // Функция для проверки и восстановления токена
+	  const restoreAuthFromStorage = () => {
+	    const savedToken = localStorage.getItem('token');
+	    if (!savedToken) {
+	      return null;
+	    }
 
-    async function loadData() {
-      setLoading(true);
-      setError(null);
+	    try {
+	      const decoded = jwtDecode<JwtPayload>(savedToken);
+	      const now = Date.now() / 1000; // текущее время в секундах
 
-      const pathSegments = window.location.pathname.split('/');
-      const clientIndex = pathSegments.indexOf('client');
+	      if (decoded.exp && decoded.exp > now) {
+	        // Токен валиден
+	        setAuthToken(savedToken);
+	        setUserRole(decoded.role);
+	        return savedToken;
+	      } else {
+	        // Токен просрочен
+	        localStorage.removeItem('token');
+	        return null;
+	      }
+	    } catch (error) {
+	      // Ошибка декодирования токена — удаляем
+	      localStorage.removeItem('token');
+	      return null;
+	    }
+	  };
 
-      try {
-        if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
-          const clientLink = pathSegments[clientIndex + 1];
-          const project = await fetchClientProjectByLink(clientLink);
-          setSelectedProject(project);
-          setCurrentView('client');
-        } else {
-          const projects = await fetchProjects();
-          setProjects(projects);
-          setCurrentView('dashboard');
-        }
-      } catch (e) {
-        console.error(e);
-        setError('Ошибка загрузки данных');
-        setCurrentView('dashboard');
-      } finally {
-        setLoading(false);
-      }
-    }
+	  // Восстанавливаем авторизацию
+	  restoreAuthFromStorage();
 
-    loadData();
-  }, []);
+	  // Загружаем данные
+	  async function loadData() {
+	    setLoading(true);
+	    setError(null);
+
+	    const pathSegments = window.location.pathname.split('/');
+	    const clientIndex = pathSegments.indexOf('client');
+
+	    try {
+	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
+	        const clientLink = pathSegments[clientIndex + 1];
+	        const project = await fetchClientProjectByLink(clientLink);
+	        setSelectedProject(project);
+	        setCurrentView('client');
+	      } else {
+	        const projects = await fetchProjects();
+	        setProjects(projects);
+	        setCurrentView('dashboard');
+	      }
+	    } catch (e) {
+	      console.error(e);
+	      setError('Ошибка загрузки данных');
+	      setCurrentView('dashboard');
+	    } finally {
+	      setLoading(false);
+	    }
+	  }
+
+	  loadData();
+	}, []);
+
+
 
   // Колбеки для управления состояниями и действиями
 
