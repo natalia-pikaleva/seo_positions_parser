@@ -18,6 +18,7 @@ import {
   fetchClientProjectByLink,
 } from './utils/api';
 
+import logo  from './assets/logo.png';
 interface JwtPayload {
   sub: string;
   role: string;
@@ -239,8 +240,7 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center border-b border-gray-200">
 		  <div className="flex items-center space-x-3">
-		    <img
-		      src="/logo.png"
+		    <img src={logo}
 		      alt="Логотип"
 		      className="h-12 w-auto"
 		    />
