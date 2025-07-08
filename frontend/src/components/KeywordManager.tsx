@@ -10,6 +10,43 @@ interface KeywordManagerProps {
 
 const REGIONS = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург'];
 
+function PriceInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
+  const [inputValue, setInputValue] = useState<string>(String(value));
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+
+    // Убираем все символы, кроме цифр
+    val = val.replace(/\D/g, '');
+
+    // Убираем ведущие нули, но оставляем один 0, если строка пустая
+    val = val.replace(/^0+(?=\d)/, '');
+
+    setInputValue(val);
+
+    // Если пусто, считаем 0
+    const numericVal = val === '' ? 0 : Number(val);
+    onChange(numericVal);
+  };
+
+  // При изменении пропса value синхронизируем локальное состояние
+  React.useEffect(() => {
+    setInputValue(value === 0 ? '' : String(value));
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={inputValue}
+      onChange={handleChange}
+      className="border border-gray-300 rounded px-3 py-2 w-full"
+      placeholder="0"
+    />
+  );
+}
+
 export const KeywordManager: React.FC<KeywordManagerProps> = ({
   keywords,
   onAddKeyword,
@@ -73,8 +110,6 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       alert('Введите ключевое слово');
       return;
     }
-
-    console.log('Saving keyword:', editingKeyword?.id, formState);
 
     try {
       if (isAdding) {
@@ -141,33 +176,24 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1">ТОП-1 до ТОП-3 (₽/день)</label>
-              <input
-                type="number"
-                min={0}
-                value={formState.price_top_1_3}
-                onChange={e => setFormState({ ...formState, price_top_1_3: Number(e.target.value) })}
-                className="border border-gray-300 rounded px-3 py-2 w-full"
-              />
+              <PriceInput
+				  value={formState.price_top_1_3}
+				  onChange={val => setFormState({ ...formState, price_top_1_3: val })}
+				/>
             </div>
             <div>
               <label className="block text-xs font-medium mb-1">ТОП-4 до ТОП-5 (₽/день)</label>
-              <input
-                type="number"
-                min={0}
+              <PriceInput
                 value={formState.price_top_4_5}
-                onChange={e => setFormState({ ...formState, price_top_4_5: Number(e.target.value) })}
-                className="border border-gray-300 rounded px-3 py-2 w-full"
-              />
+                onChange={val => setFormState({ ...formState, price_top_4_5: val })}
+				/>
             </div>
             <div>
               <label className="block text-xs font-medium mb-1">ТОП-6 до ТОП-10 (₽/день)</label>
-              <input
-                type="number"
-                min={0}
+              <PriceInput
                 value={formState.price_top_6_10}
-                onChange={e => setFormState({ ...formState, price_top_6_10: Number(e.target.value) })}
-                className="border border-gray-300 rounded px-3 py-2 w-full"
-              />
+                onChange={val => setFormState({ ...formState, price_top_6_10: val })}
+				/>
             </div>
           </div>
 
@@ -199,7 +225,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 
       <ul className="divide-y divide-gray-200 border border-gray-300 rounded">
         {keywords.map(keyword => (
-          <li key={keyword.id ?? keyword.keyword} className="flex justify-between items-center px-4 py-2">
+          <li key={keyword.id} className="flex justify-between items-center px-4 py-2">
             <div>
               <div className="font-medium">{keyword.keyword}</div>
               <div className="text-sm text-gray-600">

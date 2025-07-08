@@ -347,19 +347,19 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 
         {/* Таблица позиций */}
         <div className="overflow-x-auto" style={{ maxWidth: 'calc(100vw - 40px)' }}>
-          <table className="min-w-max w-full table-fixed border-collapse border border-gray-200">
-            <thead>
-              <tr className="bg-gray-50">
-                <th
-                  className="sticky left-0 bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-[280px] border-r border-gray-200"
-                >
-                  Ключевой запрос
-                </th>
-                <th
-                  className="sticky left-[280px] bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-[120px] border-r border-gray-200"
-                >
-                  Регион
-                </th>
+          <table className="min-w-max w-full table-auto border-collapse border border-gray-200">
+			  <thead>
+			    <tr className="bg-gray-50">
+			      <th
+			        className="sticky left-0 bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[150px] max-w-[400px] border-r border-gray-200"
+			      >
+			        Ключевой запрос
+			      </th>
+			      <th
+			        className="sticky left-[150px] bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[100px] max-w-[250px] border-r border-gray-200"
+			      >
+			        Регион
+			      </th>
                 {dates.map((date) => {
 				  const dateKey = formatDateKey(date);
 				  return (
@@ -374,20 +374,20 @@ export const PositionTable: React.FC<PositionTableProps> = ({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredKeywords.map((keyword) => {
-                const posByDate = positionsMap[keyword.id] || {};
-                return (
-                  <tr key={keyword.id} className="hover:bg-gray-50">
-                    <td
-                      className="sticky left-0 bg-white z-10 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 w-[280px] border-r border-gray-200"
-                    >
-                      {keyword.keyword}
-                    </td>
-                    <td
-                      className="sticky left-[280px] bg-white z-10 px-4 py-3 whitespace-nowrap text-sm text-gray-700 w-[120px] border-r border-gray-200"
-                    >
-                      {keyword.region}
-                    </td>
+			    {filteredKeywords.map((keyword) => {
+			      const posByDate = positionsMap[keyword.id] || {};
+			      return (
+			        <tr key={keyword.id} className="hover:bg-gray-50">
+			          <td
+			            className="sticky left-0 bg-white z-10 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 min-w-[150px] max-w-[400px] border-r border-gray-200"
+			          >
+			            {keyword.keyword}
+			          </td>
+			          <td
+			            className="sticky left-[150px] bg-white z-10 px-4 py-3 whitespace-nowrap text-sm text-gray-700 min-w-[100px] max-w-[250px] border-r border-gray-200"
+			          >
+			            {keyword.region}
+			          </td>
                     {dates.map((date) => {
 					  const dateKey = formatDateKey(date);
 					  const pos = posByDate[dateKey];

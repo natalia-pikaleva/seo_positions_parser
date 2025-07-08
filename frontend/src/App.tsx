@@ -238,7 +238,14 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center border-b border-gray-200">
-		  <h1 className="text-xl font-bold">SEO Position Parser</h1>
+		  <div className="flex items-center space-x-3">
+		    <img
+		      src="/logo.png"
+		      alt="Логотип"
+		      className="h-12 w-auto"
+		    />
+		    <h1 className="text-xl font-bold">SEO Position Parser</h1>
+		  </div>
 
 		  <div className="flex items-center space-x-4">
 		    {!authToken ? (
