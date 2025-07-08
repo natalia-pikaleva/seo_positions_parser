@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Globe, Search, MapPin, Clock } from 'lucide-react';
 import { Project, KeywordData } from '../types';
 
@@ -6,6 +6,42 @@ interface ProjectFormProps {
   onSubmit: (project: Omit<Project, 'id' | 'createdAt' | 'clientLink'>) => void;
   onCancel: () => void;
 }
+
+function PriceInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
+  const [inputValue, setInputValue] = useState<string>(value === 0 ? '' : String(value));
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+
+    // Убираем все символы, кроме цифр
+    val = val.replace(/\D/g, '');
+
+    // Убираем ведущие нули, оставляя один 0 если строка пустая
+    val = val.replace(/^0+(?=\d)/, '');
+
+    setInputValue(val);
+
+    const numericVal = val === '' ? 0 : Number(val);
+    onChange(numericVal);
+  };
+
+  useEffect(() => {
+    setInputValue(value === 0 ? '' : String(value));
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={inputValue}
+      onChange={handleChange}
+      className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+      placeholder="0"
+    />
+  );
+}
+
 
 export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
   const [domain, setDomain] = useState('');
@@ -161,37 +197,28 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) 
                     <label className="text-xs font-medium text-gray-700 mb-1 block">
                       ТОП-1 до ТОП-3 (₽/день)
                     </label>
-                    <input
-                      type="number"
-                      value={keyword.pricing.top1to3}
-                      onChange={(e) => updateKeyword(index, 'pricing.top1to3', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      min="0"
-                    />
+                    <PriceInput
+					  value={keyword.pricing.top1to3}
+					  onChange={(val) => updateKeyword(index, 'pricing.top1to3', val)}
+					/>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">
                       ТОП-4 до ТОП-5 (₽/день)
                     </label>
-                    <input
-                      type="number"
-                      value={keyword.pricing.top4to5}
-                      onChange={(e) => updateKeyword(index, 'pricing.top4to5', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      min="0"
-                    />
+                    <PriceInput
+					  value={keyword.pricing.top4to5}
+					  onChange={(val) => updateKeyword(index, 'pricing.top4to5', val)}
+					/>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">
                       ТОП-6 до ТОП-10 (₽/день)
                     </label>
-                    <input
-                      type="number"
-                      value={keyword.pricing.top6to10}
-                      onChange={(e) => updateKeyword(index, 'pricing.top6to10', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      min="0"
-                    />
+                    <PriceInput
+					  value={keyword.pricing.top6to10}
+					  onChange={(val) => updateKeyword(index, 'pricing.top6to10', val)}
+					/>
                   </div>
                 </div>
               </div>
