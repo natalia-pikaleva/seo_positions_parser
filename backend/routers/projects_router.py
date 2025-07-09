@@ -13,7 +13,7 @@ import logging
 from database.db_init import get_db
 from database.models import Project, Keyword, Position
 from routers.schemas import ProjectCreate, ProjectUpdate, KeywordUpdate, ProjectOut, ClientProjectOut, \
-    PositionOut, KeywordCreate, KeywordUpdate, KeywordOut
+    PositionOut, KeywordCreate, KeywordUpdate, KeywordOut, IntervalSumOut, KeywordIntervals
 from services.task import parse_positions_task
 from services.api_utils import generate_client_link
 
@@ -256,8 +256,6 @@ async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db
 
 
 # --- Получение позиций с фильтром по периоду ---
-
-
 @router.get("/{project_id}/positions", response_model=List[PositionOut])
 async def get_positions(
         project_id: UUID,
@@ -311,6 +309,161 @@ async def get_positions(
     except Exception as e:
         logging.error("Failed to get positions by period: %s", e)
         raise HTTPException(status_code=500, detail="Failed to get positions by period")
+
+
+@router.get("/{project_id}/positions/intervals", response_model=List[KeywordIntervals])
+async def get_positions_intervals(
+        project_id: UUID,
+        period: str = Query("month", regex="^(week|month|custom)$"),
+        offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
+        db: AsyncSession = Depends(get_db)  # Функция для получения сессии базы данных
+):
+    try:
+        current_utc_date = datetime.utcnow().date()  # Текущая дата UTC без времени
+
+        # 1. Определяем границы запрошенного периода (например, месяца)
+        # Эти границы используются для фильтрации ИНТЕРВАЛОВ, которые будут возвращены клиенту
+        if period == "month":
+            # Расчет первого дня месяца с учетом offset
+            target_month_date = datetime(current_utc_date.year, current_utc_date.month, 1) + timedelta(
+                days=30 * offset)  # Грубый сдвиг для начальной точки
+            # Корректный расчет первого дня месяца с учетом offset
+            target_month_first_day = datetime(target_month_date.year, target_month_date.month, 1)
+
+            # Пересчитываем target_month_first_day с учетом offset, чтобы попасть в нужный месяц
+            # Это более точный способ, чем просто +30*offset
+            year = current_utc_date.year
+            month = current_utc_date.month + offset
+            while month > 12:
+                month -= 12
+                year += 1
+            while month < 1:
+                month += 12
+                year -= 1
+
+            period_display_start = datetime(year, month, 1).date()
+            # Расчет последнего дня месяца
+            period_display_end = (datetime(year, month + 1, 1) - timedelta(days=1)).date() if month < 12 else (
+                    datetime(year + 1, 1, 1) - timedelta(days=1)).date()
+
+        elif period == "week":
+            # Расчет понедельника текущей недели с учетом offset
+            monday = current_utc_date - timedelta(days=current_utc_date.weekday())  # Понедельник текущей недели
+            period_display_start = monday + timedelta(weeks=offset)
+            period_display_end = period_display_start + timedelta(days=6)  # Воскресенье текущей недели
+        else:  # 'custom' или любой другой случай, если у вас будет
+            # Для custom периода, вероятно, нужны будут start_date и end_date из запроса
+            # Для простоты, пока вернем все интервалы
+            period_display_start = None
+            period_display_end = None
+
+        # 2. Получаем дату создания проекта
+        project_query = select(Project).where(Project.id == project_id)
+        project_result = await db.execute(project_query)
+        project = project_result.scalar_one_or_none()
+
+        if not project or not project.createdAt:
+            raise HTTPException(status_code=404, detail="Project not found or creation date missing.")
+
+        project_start_date = project.createdAt.date()  # Используем только дату
+
+        # 3. Генерируем ВСЕ 14-дневные интервалы от даты создания проекта до текущей даты
+        # Это важно, чтобы учесть все позиции, даже те, что в "старых" интервалах
+        all_biweekly_intervals = []
+        interval_start = project_start_date
+        # Генерируем интервалы до текущей даты (или чуть дальше, чтобы захватить последний неполный)
+        while interval_start <= current_utc_date + timedelta(days=14):  # Несколько дней запаса
+            interval_end = interval_start + timedelta(days=13)
+            all_biweekly_intervals.append((interval_start, interval_end))
+            interval_start += timedelta(days=14)
+
+        # 4. Фильтруем сгенерированные интервалы, чтобы вернуть только те, которые
+        # пересекаются с ОТОБРАЖАЕМЫМ периодом (period_display_start/end).
+        # Но суммы будем считать по полному 14-дневному интервалу.
+        relevant_intervals_for_display = []
+        for start_dt, end_dt in all_biweekly_intervals:
+            # Проверяем пересечение интервала с отображаемым периодом
+            if period_display_start and period_display_end:
+                if (start_dt <= period_display_end and end_dt >= period_display_start):
+                    relevant_intervals_for_display.append((start_dt, end_dt))
+            else:  # Если period_display_start/end не определены (например, для custom)
+                relevant_intervals_for_display.append((start_dt, end_dt))
+
+        # Сортируем интервалы по дате начала
+        relevant_intervals_for_display.sort(key=lambda x: x[0])
+
+        # 5. Получаем все ключевые слова для данного проекта
+        keywords_query = select(Keyword.id).where(Keyword.project_id == project_id)
+        keywords_result = await db.execute(keywords_query)
+        keyword_ids = [k_id for (k_id,) in keywords_result.all()]  # Получаем список UUID
+
+        # 6. Загружаем ВСЕ позиции для этих ключевых слов, чтобы избежать множественных запросов
+        # и иметь данные для всех интервалов.
+        # Ограничим по дате максимального интервала, чтобы не тащить совсем старые данные
+        max_relevant_date = max(
+            i[1] for i in relevant_intervals_for_display) if relevant_intervals_for_display else current_utc_date
+        min_relevant_date = min(
+            i[0] for i in relevant_intervals_for_display) if relevant_intervals_for_display else project_start_date
+
+        # Расширяем диапазон для загрузки позиций, чтобы захватить данные для интервалов,
+        # которые начинаются раньше period_display_start, но заканчиваются в нём.
+        # Например, интервал 25.06-08.07 для июля месяца.
+        # Берем 14 дней до начала самого раннего отображаемого интервала.
+        fetch_positions_start_date = min_relevant_date - timedelta(days=14)
+
+        all_positions_query = select(Position).where(
+            Position.keyword_id.in_(keyword_ids),
+            Position.checked_at >= fetch_positions_start_date,
+            Position.checked_at <= max_relevant_date + timedelta(days=1)
+            # +1 день, чтобы захватить позиции до конца дня
+        )
+        all_positions_result = await db.execute(all_positions_query)
+        all_positions = all_positions_result.scalars().all()
+
+        # Создаем маппинг для быстрого доступа к позициям
+        # { keyword_id: { date_str: Position } }
+        positions_by_keyword_and_date = {}
+        for pos in all_positions:
+            if pos.keyword_id not in positions_by_keyword_and_date:
+                positions_by_keyword_and_date[pos.keyword_id] = {}
+            # Приводим checked_at к date, чтобы совпало с interval_start/end
+            positions_by_keyword_and_date[pos.keyword_id][pos.checked_at.date()] = pos
+
+        final_results: List[KeywordIntervals] = []
+
+        # 7. Для каждого ключевого слова считаем сумму по каждому релевантному интервалу
+        for k_id in keyword_ids:
+            keyword_intervals_data: List[IntervalSumOut] = []
+            for int_start_dt, int_end_dt in relevant_intervals_for_display:
+                current_sum = 0.0
+                current_date = int_start_dt
+                while current_date <= int_end_dt:
+                    position = positions_by_keyword_and_date.get(k_id, {}).get(current_date)
+                    if position and position.cost is not None:
+                        current_sum += position.cost
+                    current_date += timedelta(days=1)
+
+                keyword_intervals_data.append(
+                    IntervalSumOut(
+                        start_date=int_start_dt,
+                        end_date=int_end_dt,
+                        sum_cost=current_sum
+                    )
+                )
+            final_results.append(
+                KeywordIntervals(
+                    keyword_id=k_id,
+                    intervals=keyword_intervals_data
+                )
+            )
+
+        return final_results
+
+    except HTTPException:
+        raise  # Пробрасываем HTTPExceptions без изменений
+    except Exception as e:
+        logging.error(f"Failed to get positions intervals: {e}", exc_info=True)  # exc_info=True для полного стека
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # --- Экспорт в Excel ---

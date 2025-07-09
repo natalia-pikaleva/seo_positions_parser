@@ -1,9 +1,8 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field, constr, ConfigDict
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
-
 
 class ScheduleEnum(str, Enum):
     daily = "daily"
@@ -68,6 +67,14 @@ class PositionOut(BaseModel):
     cost: int
     trend: TrendEnum
 
+class IntervalSumOut(BaseModel):
+    start_date: date  # Используем date, так как на фронтенде удобно работать с датами без времени
+    end_date: date
+    sum_cost: float
+
+class KeywordIntervals(BaseModel):
+    keyword_id: UUID
+    intervals: List[IntervalSumOut]
 
 # --- Project ---
 

@@ -15,4 +15,4 @@ python-jose[cryptography]
 bcrypt
 pandas
 openpyxl
-
+uvicorn

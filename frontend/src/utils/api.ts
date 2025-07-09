@@ -109,6 +109,33 @@ export async function fetchPositions(projectId: string, period: string, offset: 
   return response.json();
 }
 
+interface IntervalSum {
+  start_date: string; // например, "2025-06-16"
+  end_date: string;   // например, "2025-06-29"
+  sum_cost: number;
+}
+
+interface KeywordIntervals {
+  keyword_id: string;
+  intervals: IntervalSum[];
+}
+
+export async function fetchPositionsIntervals(
+  projectId: string,
+  period: string,
+  offset: number = 0
+): Promise<KeywordIntervals[]> {
+  const params = new URLSearchParams();
+  params.append('period', period);
+  params.append('offset', offset.toString());
+
+  const response = await fetch(`${API_BASE}/projects/${projectId}/positions/intervals?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Ошибка загрузки агрегированных сумм позиций');
+  }
+  return response.json();
+}
+
 export async function fetchClientProjectByLink(clientLink: string): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects/client/${clientLink}`);
   if (!res.ok) {
