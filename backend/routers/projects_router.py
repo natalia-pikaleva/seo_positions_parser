@@ -362,10 +362,10 @@ async def get_positions_intervals(
         project_result = await db.execute(project_query)
         project = project_result.scalar_one_or_none()
 
-        if not project or not project.createdAt:
+        if not project or not project.created_at:
             raise HTTPException(status_code=404, detail="Project not found or creation date missing.")
 
-        project_start_date = project.createdAt.date()  # Используем только дату
+        project_start_date = project.created_at.date()  # Используем только дату
 
         # 3. Генерируем ВСЕ 14-дневные интервалы от даты создания проекта до текущей даты
         # Это важно, чтобы учесть все позиции, даже те, что в "старых" интервалах
