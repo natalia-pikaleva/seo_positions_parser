@@ -100,9 +100,21 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  const [projectCreatedAt, setProjectCreatedAt] = useState<Date | null>(null);
 	  const [keywordFilter, setKeywordFilter] = useState('');
 	  const [positions, setPositions] = useState<Position[]>([]);
+	  const [showClientLink, setShowClientLink] = useState(false);
 
 
 	  const today = new Date();
+
+	  const copyClientLink = async () => {
+	    try {
+	      const fullLink = generateClientLink(project.clientLink);
+	      await navigator.clipboard.writeText(fullLink);
+	      setShowClientLink(true);
+	      setTimeout(() => setShowClientLink(false), 2000); // через 2 секунды вернём обратно
+	    } catch (err) {
+	      console.error('Не удалось скопировать ссылку', err);
+	    }
+	  };
 
 	  useEffect(() => {
 	    if (project?.createdAt) {
@@ -275,19 +287,13 @@ export const PositionTable: React.FC<PositionTableProps> = ({
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={async () => {
-                try {
-                  const fullLink = generateClientLink(project.clientLink);
-                  await navigator.clipboard.writeText(fullLink);
-                } catch (err) {
-                  console.error('Не удалось скопировать ссылку', err);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-            >
-              <Copy className="w-4 h-4" />
-              Ссылка для клиента
-            </button>
+		      onClick={copyClientLink}
+		      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+		    >
+		      <Copy className="w-4 h-4" />
+		      {showClientLink ? 'Скопировано!' : 'Ссылка для клиента'}
+		    </button>
+
 
             <button
               onClick={() => setIsEditProjectOpen(true)}
