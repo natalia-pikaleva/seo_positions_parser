@@ -3,6 +3,7 @@ import { BarChart3, Calendar, TrendingUp, Minus, Star } from 'lucide-react';
 import { Project, FilterOptions, Position } from '../types';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { fetchPositions } from '../utils/api';
+import logo  from '../assets/logo.png';
 
 interface ClientViewProps {
   project: Project;
@@ -97,23 +98,33 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
   }, [project.keywords, keywordFilter]);
 
   //Статистика
-  const uniqueKeywordsWithTop3 = useMemo(() => {
+  // Ключевые слова в позициях от 1 до 3
+	const uniqueKeywordsTop1to3 = useMemo(() => {
 	  return new Set(
-	    positions.filter(pos => pos.position && pos.position <= 3).map(pos => pos.keyword_id)
+	    positions
+	      .filter(pos => pos.position !== undefined && pos.position >= 1 && pos.position <= 3)
+	      .map(pos => pos.keyword_id)
 	  );
 	}, [positions]);
 
-  const uniqueKeywordsWithTop5 = useMemo(() => {
-    return new Set(
-      positions.filter(pos => pos.position && pos.position <= 5).map(pos => pos.keyword_id)
+	// Ключевые слова в позициях от 4 до 5
+	const uniqueKeywordsTop4to5 = useMemo(() => {
+	  return new Set(
+	    positions
+	      .filter(pos => pos.position !== undefined && pos.position >= 4 && pos.position <= 5)
+	      .map(pos => pos.keyword_id)
 	  );
 	}, [positions]);
 
-  const uniqueKeywordsWithTop10 = useMemo(() => {
+	// Ключевые слова в позициях от 6 до 10
+	const uniqueKeywordsTop6to10 = useMemo(() => {
 	  return new Set(
-	    positions.filter(pos => pos.position && pos.position <= 10).map(pos => pos.keyword_id)
+	    positions
+	      .filter(pos => pos.position !== undefined && pos.position >= 6 && pos.position <= 10)
+	      .map(pos => pos.keyword_id)
 	  );
 	}, [positions]);
+
 
   const latestCheckDate = useMemo(() => {
 	  if (!positions.length) return null;
@@ -129,6 +140,15 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center border-b border-gray-200">
+		  <div className="flex items-center space-x-3">
+		    <img src={logo}
+		      alt="Логотип"
+		      className="h-12 w-auto"
+		    />
+		    <h1 className="text-xl font-bold">SEO Position Parser</h1>
+		  </div>
+      </div>
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Заголовок и статистика */}
         <div className="bg-white rounded-lg shadow-lg mb-6">
@@ -146,7 +166,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
               <TrendingUp className="w-6 h-6 text-green-600" />
               <span className="text-sm font-medium text-gray-700">В ТОП-3</span>
             </div>
-            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop3.size}</div>
+            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsTop1to3.size}</div>
             <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
           </div>
 
@@ -155,7 +175,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
               <Star  className="w-6 h-6 text-blue-600" />
               <span className="text-sm font-medium text-gray-700">В ТОП-5</span>
             </div>
-            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsWithTop5.size}</div>
+            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsTop4to5.size}</div>
             <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
           </div>
 
@@ -164,7 +184,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
               <Minus className="w-6 h-6 text-yellow-600" />
               <span className="text-sm font-medium text-gray-700">В ТОП-10</span>
             </div>
-            <div className="text-3xl font-bold text-yellow-600 mb-1">{uniqueKeywordsWithTop10.size}</div>
+            <div className="text-3xl font-bold text-yellow-600 mb-1">{uniqueKeywordsTop6to10.size}</div>
             <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
           </div>
         </div>
