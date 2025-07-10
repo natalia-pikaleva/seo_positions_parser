@@ -2,11 +2,24 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, Calendar, TrendingUp, Minus, Star } from 'lucide-react';
 import { Project, FilterOptions, Position } from '../types';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
-import { fetchPositions } from '../utils/api';
+import { fetchPositions, fetchPositionsIntervals } from '../utils/api';
 import logo  from '../assets/logo.png';
+import { PositionTableView } from './PositionTableView';
 
 interface ClientViewProps {
   project: Project;
+}
+
+function getDatesForCurrentMonth(offset: number): Date[] {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth() + offset; // offset для переключения месяцев
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const dates: Date[] = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    dates.push(new Date(year, month, day));
+  }
+  return dates;
 }
 
 function getDatesForPeriod(period: FilterOptions['period'], offset: number): Date[] {
@@ -26,27 +39,62 @@ function getDatesForPeriod(period: FilterOptions['period'], offset: number): Dat
       dates.push(d);
     }
   } else if (period === 'month') {
-    const year = today.getFullYear();
-    const month = today.getMonth() + offset;
-
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const d = new Date(year, month, day);
-      d.setHours(0, 0, 0, 0);
-      dates.push(d);
-    }
+    // Можно использовать вашу функцию getDatesForCurrentMonth
+    return getDatesForCurrentMonth(offset);
   }
-  // Для custom пока возвращаем пустой массив или реализуем отдельно
+
   return dates;
+}
+
+function generateBiweeklyIntervalsFromStart(startDate: Date, endDate: Date): { startDate: Date; endDate: Date; label: string }[] {
+  const intervals = [];
+  let currentStart = new Date(startDate);
+  currentStart.setHours(0, 0, 0, 0);
+
+  while (currentStart <= endDate) {
+    const currentEnd = new Date(currentStart);
+    currentEnd.setDate(currentEnd.getDate() + 13);
+    if (currentEnd > endDate) currentEnd.setTime(endDate.getTime());
+
+    intervals.push({
+      startDate: new Date(currentStart),
+      endDate: new Date(currentEnd),
+      label: `${currentStart.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${currentEnd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`
+    });
+
+    currentStart.setDate(currentStart.getDate() + 14);
+  }
+
+  return intervals;
 }
 
 
 export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
-  const [filter, setFilter] = useState<FilterOptions>({ period: 'week' });
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [keywordFilter, setKeywordFilter] = useState('');
+  const today = new Date();
   const [periodOffset, setPeriodOffset] = useState(0);
+  const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
+  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
+  const [editableProject, setEditableProject] = useState<Project>(project);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [projectCreatedAt, setProjectCreatedAt] = useState<Date | null>(null);
+  const [keywordFilter, setKeywordFilter] = useState('');
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [showClientLink, setShowClientLink] = useState(false);
+
+  useEffect(() => {
+	  console.log('project.createdAt:7777777777', project.createdAt);
+	  if (project.createdAt) {
+	    setProjectCreatedAt(new Date(project.createdAt));
+	  } else if (project.created_at) {
+	    setProjectCreatedAt(new Date(project.created_at));
+	  } else {
+	    // Если даты нет, можно взять первый день текущего месяца
+	    const today = new Date();
+	    setProjectCreatedAt(new Date(today.getFullYear(), today.getMonth(), 1));
+	  }
+	}, [project]);
 
 
   useEffect(() => {
@@ -65,37 +113,124 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 	}, [project?.id, filter.period, periodOffset]);
 
 
-  // Массив дат для заголовков столбцов
-  const dates = useMemo(() => getDatesForPeriod(filter.period, periodOffset), [filter.period, periodOffset]);
+  const dates = useMemo(() => {
+		  if (filter.period === 'week') {
+		    return getDatesForPeriod('week', periodOffset);
+		  }
+		  if (filter.period === 'month') {
+		    return getDatesForCurrentMonth(periodOffset);
+		  }
+		  return [];
+		}, [filter.period, periodOffset]);
 
-  const formatDateKey = (date: Date): string => {
-	  const year = date.getFullYear();
-	  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-	  const day = date.getDate().toString().padStart(2, '0');
-	  return `${year}-${month}-${day}`;
-	};
+  const headerDates = useMemo(() => {
+		  if (filter.period === 'week') {
+		    return getDatesForPeriod('week', periodOffset);
+		  }
+		  if (filter.period === 'month') {
+		    return getDatesForCurrentMonth(periodOffset);
+		  }
+		  return [];
+		}, [filter.period, periodOffset]);
 
 
-  // Группируем позиции по ключевым словам и дате (дата в формате yyyy-mm-dd)
-  const positionsMap = useMemo(() => {
-	  const map: Record<string, Record<string, Position>> = {};
-	  positions.forEach(pos => {
-	    if (!map[pos.keyword_id]) {
-	      map[pos.keyword_id] = {};
+  const biweeklyIntervals = useMemo(() => {
+		  if (filter.period !== 'month' || !projectCreatedAt) return [];
+
+		  const monthStart = dates[0];
+		  const monthEnd = dates[dates.length - 1];
+
+		  // Генерируем интервалы от даты старта до конца текущего месяца
+		  const allIntervals = generateBiweeklyIntervalsFromStart(projectCreatedAt, monthEnd);
+
+		  // Фильтруем интервалы, чтобы оставить только те, что пересекаются с текущим месяцем
+		  return allIntervals.filter(interval =>
+		    interval.endDate >= monthStart && interval.startDate <= monthEnd
+		  );
+		}, [filter.period, projectCreatedAt, dates]);
+
+
+  const dateGroups = useMemo(() => {
+	  if (filter.period !== 'month') return [];
+
+	  // Получаем границы текущего месяца из массива dates
+	  const monthStart = dates[0];
+	  const monthEnd = dates[dates.length - 1];
+
+	  return biweeklyIntervals.map(interval => {
+	    const group: Date[] = [];
+	    // Начинаем с максимума между interval.startDate и monthStart
+	    const start = interval.startDate > monthStart ? interval.startDate : monthStart;
+	    // Конец — минимум между interval.endDate и monthEnd
+	    const end = interval.endDate < monthEnd ? interval.endDate : monthEnd;
+
+	    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	      group.push(new Date(d));
 	    }
-	    const dateKey = formatDateKey(new Date(pos.checked_at));
-	    map[pos.keyword_id][dateKey] = pos;
+	    return group;
 	  });
-	  return map;
-	}, [positions]);
+	}, [filter.period, biweeklyIntervals, dates]);
+
+    useEffect(() => {
+	  console.log('dates:', dates);
+	  console.log('biweeklyIntervals:', biweeklyIntervals);
+	  console.log('dateGroups:', dateGroups);
+	}, [projectCreatedAt, dates, biweeklyIntervals, dateGroups]);
 
 
-  // Фильтрация ключевых слов по фильтру
+
+
+  // Загрузка агрегированных сумм по интервалам
+  useEffect(() => {
+    if (!project?.id || filter.period !== 'month') {
+      setIntervalSums({});
+      return;
+    }
+    async function loadIntervalSums() {
+      try {
+        const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+        const sumsMap: Record<string, Record<string, number>> = {};
+        data.forEach(({ keyword_id, intervals }) => {
+          sumsMap[keyword_id] = {};
+          intervals.forEach(({ start_date, end_date, sum_cost }) => {
+            const label = `${start_date} - ${end_date}`;
+            sumsMap[keyword_id][label] = sum_cost;
+          });
+        });
+        setIntervalSums(sumsMap);
+      } catch (error) {
+        console.error('Ошибка загрузки сумм по интервалам', error);
+      }
+    }
+    loadIntervalSums();
+  }, [project?.id, filter.period, periodOffset]);
+
+  // Форматирование даты для ключа
+  const formatDateKey = (date: Date) => {
+    const y = date.getFullYear();
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  // Создание карты позиций для быстрого доступа
+  const positionsMap = useMemo(() => {
+    const map: Record<string, Record<string, Position>> = {};
+    positions.forEach(pos => {
+      if (!map[pos.keyword_id]) map[pos.keyword_id] = {};
+      const dateKey = formatDateKey(new Date(pos.checked_at));
+      map[pos.keyword_id][dateKey] = pos;
+    });
+    return map;
+  }, [positions]);
+
+  // Фильтрация ключевых слов
   const filteredKeywords = useMemo(() => {
-    return project.keywords.filter(keyword =>
-      keyword.keyword.toLowerCase().includes(keywordFilter.toLowerCase())
+    return editableProject.keywords.filter(k =>
+      k.keyword.toLowerCase().includes(keywordFilter.toLowerCase())
     );
-  }, [project.keywords, keywordFilter]);
+  }, [editableProject.keywords, keywordFilter]);
+
 
   //Статистика
   // Ключевые слова в позициях от 1 до 3
@@ -235,78 +370,17 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
           </div>
 
           {/* Таблица позиций */}
-          <div className="overflow-x-auto" style={{ maxWidth: '100vw' }}>
-		  <table className="min-w-max w-full table-auto border-collapse border border-gray-200">
-			  <thead>
-			    <tr className="bg-gray-50">
-			      <th
-			        className="sticky left-0 bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[150px] max-w-[400px] border-r border-gray-200"
-			      >
-			        Ключевой запрос
-			      </th>
-			      <th
-			        className="sticky left-[150px] bg-gray-50 z-20 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[100px] max-w-[250px] border-r border-gray-200"
-			      >
-			        Регион
-			      </th>
-				  {dates.map(date => {
-					  const dateKey = formatDateKey(date);
-					  return (
-					    <th
-					      key={date.toISOString()}
-					      className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[70px]"
-					    >
-					      {date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-					    </th>
-					  );
-					})}
-				</tr>
-		    </thead>
-		    <tbody className="bg-white divide-y divide-gray-200">
-			    {filteredKeywords.map((keyword) => {
-			      const posByDate = positionsMap[keyword.id] || {};
-			      return (
-			        <tr key={keyword.id} className="hover:bg-gray-50">
-			          <td
-			            className="sticky left-0 bg-white z-10 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 min-w-[150px] max-w-[400px] border-r border-gray-200"
-			          >
-			            {keyword.keyword}
-			          </td>
-			          <td
-			            className="sticky left-[150px] bg-white z-10 px-4 py-3 whitespace-nowrap text-sm text-gray-700 min-w-[100px] max-w-[250px] border-r border-gray-200"
-			          >
-			            {keyword.region}
-			          </td>
-					  {dates.map(date => {
-					    const dateKey = formatDateKey(date);
-					    const pos = posByDate[dateKey];
-					    if (!pos) {
-					      return (
-					        <td key={dateKey} className="px-3 py-2 text-center text-sm text-gray-400">
-					          —
-					        </td>
-					      );
-					    }
-					    return (
-					      <td key={dateKey} className="px-3 py-2 text-center text-sm">
-					        <div className="flex items-center justify-center gap-1">
-					          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPositionColor(pos.position)}`}>
-					            {pos.position ? `#${pos.position}` : '—'}
-					          </span>
-					          <span className={`text-xs ${getTrendColor(pos.trend)}`} title="Динамика позиции">
-					            {getTrendIcon(pos.trend)}
-					          </span>
-					        </div>
-					      </td>
-					    );
-					  })}
-					</tr>
-
-		        );
-		      })}
-		    </tbody>
-		  </table>
-		</div>
+          <PositionTableView
+			  editableProject={project}
+			  filteredKeywords={filteredKeywords}
+			  positionsMap={positionsMap}
+			  dates={dates}
+			  headerDates={headerDates}
+			  dateGroups={dateGroups}
+			  filterPeriod={filter.period}
+			  intervalSums={intervalSums}
+			  formatDateKey={formatDateKey}
+			/>
 
         </div>
       </div>

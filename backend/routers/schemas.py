@@ -119,11 +119,14 @@ class ProjectOut(ProjectBase):
 
 class ClientProjectOut(BaseModel):
     id: UUID
+    created_at: datetime = Field(..., alias="createdAt")
     domain: str
     keywords: List[KeywordOut]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(
+        from_attributes=True,  # Включает поддержку ORM-объектов
+        populate_by_name=True  # Позволяет использовать alias при валидации и сериализации
+    )
 
 
 # --- Дополнительные схемы ---
