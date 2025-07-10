@@ -109,15 +109,17 @@ export async function fetchPositions(projectId: string, period: string, offset: 
   return response.json();
 }
 
-interface IntervalSum {
-  start_date: string; // например, "2025-06-16"
-  end_date: string;   // например, "2025-06-29"
+interface IntervalSumOut {
+  start_date: string;
+  end_date: string;
+  display_start_date: string;
+  display_end_date: string;
   sum_cost: number;
 }
 
 interface KeywordIntervals {
   keyword_id: string;
-  intervals: IntervalSum[];
+  intervals: IntervalSumOut[];
 }
 
 export async function fetchPositionsIntervals(

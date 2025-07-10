@@ -4,6 +4,7 @@ from uuid import UUID
 from datetime import datetime, date
 from enum import Enum
 
+
 class ScheduleEnum(str, Enum):
     daily = "daily"
     weekly = "weekly"
@@ -67,14 +68,19 @@ class PositionOut(BaseModel):
     cost: int
     trend: TrendEnum
 
+
 class IntervalSumOut(BaseModel):
-    start_date: date  # Используем date, так как на фронтенде удобно работать с датами без времени
-    end_date: date
-    sum_cost: float
+    start_date: date  # Начало полного интервала (для подсчёта суммы)
+    end_date: date  # Конец полного интервала (для подсчёта суммы)
+    display_start_date: date  # Начало интервала для отображения (обрезанный)
+    display_end_date: date  # Конец интервала для отображения
+    sum_cost: float  # Сумма по полному интервалу
+
 
 class KeywordIntervals(BaseModel):
     keyword_id: UUID
     intervals: List[IntervalSumOut]
+
 
 # --- Project ---
 
@@ -141,6 +147,7 @@ class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str
 
+
 class ManagerCreateRequest(BaseModel):
     username: str
-    temporary_password: str | None = None  # если не передан — будет равен username
+    temporary_password: str | None = None
