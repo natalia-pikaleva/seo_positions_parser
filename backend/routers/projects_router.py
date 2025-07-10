@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, status
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import desc
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
@@ -21,6 +22,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# --- Переключение ключевых слов в состояние снятие позиций и отключение
+
+@router.patch("/keywords/{keyword_id}/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def disable_keyword_check(keyword_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Keyword).where(Keyword.id == keyword_id))
+    keyword = result.scalars().first()
+    if not keyword:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+    keyword.is_check = False
+    await db.commit()
+    return
+
+@router.patch("/keywords/{keyword_id}/enable", status_code=status.HTTP_204_NO_CONTENT)
+async def enable_keyword_check(keyword_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Keyword).where(Keyword.id == keyword_id))
+    keyword = result.scalars().first()
+    if not keyword:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+    keyword.is_check = True
+    await db.commit()
+    return
 
 # --- Проекты ---
 
@@ -28,7 +50,9 @@ router = APIRouter()
 async def get_projects(db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(
-            select(Project).options(selectinload(Project.keywords))
+            select(Project).options(
+                selectinload(Project.keywords)
+            )
         )
         projects = result.scalars().all()
         return projects
@@ -50,15 +74,19 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
         project = Project(**project_data)
 
         for kw_in in project_in.keywords:
-            keyword = Keyword(**kw_in.dict())
+            keyword = Keyword(
+                keyword=kw_in.keyword,
+                region=kw_in.region,
+                price_top_1_3=kw_in.price_top_1_3,
+                price_top_4_5=kw_in.price_top_4_5,
+                price_top_6_10=kw_in.price_top_6_10,
+                is_check=True
+            )
             project.keywords.append(keyword)
 
         db.add(project)
         await db.commit()
-        # Обновляем объект, чтобы получить id и другие поля
         await db.refresh(project)
-
-        # Жестко загружаем связанные keywords, чтобы избежать ошибки MissingGreenlet
         await db.refresh(project, attribute_names=["keywords"])
 
         logger.info(f"project.created_at: {project.created_at}, project.client_link: {project.client_link}")
@@ -69,6 +97,7 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
     except Exception as e:
         logging.error("Failed to create project: %s", e)
         raise HTTPException(status_code=500, detail="Failed to create project")
+
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -169,6 +198,7 @@ async def create_keyword(
             price_top_1_3=keyword_in.price_top_1_3,
             price_top_4_5=keyword_in.price_top_4_5,
             price_top_6_10=keyword_in.price_top_6_10,
+            is_check=True
         )
         db.add(new_keyword)
         await db.commit()

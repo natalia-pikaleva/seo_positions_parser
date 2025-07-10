@@ -222,6 +222,10 @@ def parse_positions_task():
         session = SessionLocal()
         try:
             for keyword in project.keywords:
+                if not keyword.is_check:
+                    logger.info(
+                        f"Пропускаем ключевое слово '{keyword.keyword}' с is_check=False в проекте {project.id}")
+                    continue
                 success = parse_and_save_position(session, project, keyword)
                 if not success:
                     failed_keywords.append((project.id, keyword.id))

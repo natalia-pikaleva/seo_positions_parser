@@ -140,7 +140,10 @@ function App() {
 
   const handleCreateProject = async (projectData: Omit<Project, 'id' | 'createdAt' | 'clientLink'>) => {
     try {
+      console.log('Данные проекта для отправки:', projectData);
       const newProject = await createProject(projectData);
+      console.log('Созданный проект:', newProject);
+
       setProjects(prev => [...prev, newProject]);
       setCurrentView('dashboard');
     } catch (error) {
