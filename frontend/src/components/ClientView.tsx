@@ -22,6 +22,7 @@ function getDatesForCurrentMonth(offset: number): Date[] {
   return dates;
 }
 
+
 function getDatesForPeriod(period: FilterOptions['period'], offset: number): Date[] {
   const today = new Date();
   const dates: Date[] = [];
@@ -70,7 +71,6 @@ function generateBiweeklyIntervalsFromStart(startDate: Date, endDate: Date): { s
 
 
 export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
-  const today = new Date();
   const [periodOffset, setPeriodOffset] = useState(0);
   const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
   const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
@@ -82,9 +82,11 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
   const [keywordFilter, setKeywordFilter] = useState('');
   const [positions, setPositions] = useState<Position[]>([]);
   const [showClientLink, setShowClientLink] = useState(false);
+  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
+
+
 
   useEffect(() => {
-	  console.log('project.createdAt:7777777777', project.createdAt);
 	  if (project.createdAt) {
 	    setProjectCreatedAt(new Date(project.createdAt));
 	  } else if (project.created_at) {
@@ -95,23 +97,6 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 	    setProjectCreatedAt(new Date(today.getFullYear(), today.getMonth(), 1));
 	  }
 	}, [project]);
-
-
-  useEffect(() => {
-	  if (!project?.id) return;
-
-	  async function loadPositions() {
-	    try {
-	      // Передаём periodOffset в API, если поддерживается
-	      const data = await fetchPositions(project.id, filter.period, periodOffset);
-	      setPositions(data);
-	    } catch (error) {
-	      console.error('Ошибка загрузки позиций', error);
-	    }
-	  }
-	  loadPositions();
-	}, [project?.id, filter.period, periodOffset]);
-
 
   const dates = useMemo(() => {
 		  if (filter.period === 'week') {
@@ -132,6 +117,74 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 		  }
 		  return [];
 		}, [filter.period, periodOffset]);
+
+
+
+  useEffect(() => {
+	  if (!project?.id) return;
+
+	  async function loadPositions() {
+	    try {
+	      // Передаём periodOffset в API, если поддерживается
+	      const data = await fetchPositions(project.id, filter.period, periodOffset);
+	      setPositions(data);
+	    } catch (error) {
+	      console.error('Ошибка загрузки позиций', error);
+	    }
+	  }
+	  loadPositions();
+	}, [project?.id, filter.period, periodOffset]);
+
+  useEffect(() => {
+  if (!project?.id || filter.period !== 'month') {
+    setIntervalSums({});
+    setServerIntervals([]);
+    return;
+  }
+
+  async function loadIntervalSums() {
+    try {
+      const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+      const sumsMap: Record<string, Record<string, number>> = {};
+      data.forEach(({ keyword_id, intervals }) => {
+        sumsMap[keyword_id] = {};
+        intervals.forEach(({ start_date, end_date, sum_cost }) => {
+          const label = `${start_date} - ${end_date}`;
+          sumsMap[keyword_id][label] = sum_cost;
+        });
+      });
+      setIntervalSums(sumsMap);
+
+      if (data.length > 0) {
+        const intervalsGroups = data[0].intervals.map(interval => {
+          const start = new Date(interval.display_start_date);
+          const end = new Date(interval.display_end_date);
+          const dates: Date[] = [];
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            dates.push(new Date(d));
+          }
+          return {
+            dates,
+            startDate: interval.start_date,
+            endDate: interval.end_date,
+            display_start_date: interval.display_start_date,
+            display_end_date: interval.display_end_date,
+          };
+        }).filter(group => group.dates.length > 0);
+
+        setServerIntervals(intervalsGroups);
+      } else {
+        setServerIntervals([]);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки сумм по интервалам', error);
+      setServerIntervals([]);
+    }
+  }
+  loadIntervalSums();
+}, [project?.id, filter.period, periodOffset]);
+
+
 
 
   const biweeklyIntervals = useMemo(() => {
@@ -272,6 +325,54 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 	  setPeriodOffset(0);
 	}, [filter.period]);
 
+  // Вычисление последнего дня месяца с учётом periodOffset
+const getLastDayOfMonth = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const lastDay = new Date(year, month + 1, 0);
+  return lastDay.toISOString().slice(0, 10);
+};
+
+const today = new Date();
+const offsetMonth = new Date(today.getFullYear(), today.getMonth() + periodOffset, 1);
+const lastDayOfMonth = getLastDayOfMonth(offsetMonth);
+
+// Сортируем интервалы по дате начала
+const sortedIntervals = useMemo(() => {
+  return [...(serverIntervals || [])].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+  );
+}, [serverIntervals]);
+
+// Функция сравнения дат по дню, месяцу и году
+const isSameDay = (date1: Date, date2: Date): boolean =>
+  date1.getFullYear() === date2.getFullYear() &&
+  date1.getMonth() === date2.getMonth() &&
+  date1.getDate() === date2.getDate();
+
+// Формируем расширенные группы с флагом isLastPartial и фильтруем
+const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
+  const start = new Date(group.startDate);
+  const end = new Date(group.endDate);
+  const length = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+  const isLast = idx === arr.length - 1;
+  const isPartial = length < 14;
+
+  // Помечаем последний интервал без проверки по дате
+  const isLastPartial = isLast && isPartial;
+
+  return { ...group, isLastPartial };
+}).filter(group => {
+  if (!group.dates || group.dates.length === 0) return false;
+
+  if (group.isLastPartial) return true;
+
+  const start = new Date(group.startDate);
+  const end = new Date(group.endDate);
+  const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+  return diffDays >= 14;
+});
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -371,16 +472,16 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 
           {/* Таблица позиций */}
           <PositionTableView
-			  editableProject={project}
-			  filteredKeywords={filteredKeywords}
-			  positionsMap={positionsMap}
-			  dates={dates}
-			  headerDates={headerDates}
-			  dateGroups={dateGroups}
-			  filterPeriod={filter.period}
-			  intervalSums={intervalSums}
-			  formatDateKey={formatDateKey}
-			/>
+          editableProject={editableProject}
+          filteredKeywords={filteredKeywords}
+          positionsMap={positionsMap}
+          dates={dates}
+          headerDates={headerDates}
+          dateGroups={extendedDateGroups}
+          filterPeriod={filter.period}
+          intervalSums={intervalSums}
+          formatDateKey={formatDateKey}
+        />
 
         </div>
       </div>
