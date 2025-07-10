@@ -45,11 +45,17 @@ export const PositionTableView: React.FC<Props> = ({
     <table className="min-w-max w-full table-auto border-collapse border border-gray-200">
 	  <thead>
 	    <tr className="bg-gray-50">
-	      <th className="sticky top-0 left-0 bg-gray-50 z-30 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[150px] max-w-[400px] border-r border-gray-200">
-	        Ключевой запрос
-	      </th>
-	      <th className="sticky top-0 left-[150px] bg-gray-50 z-30 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[100px] max-w-[250px] border-r border-gray-200">
-	        Регион
+	      <th
+		  className="sticky top-0 left-0 bg-white z-40 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[150px] max-w-[400px] border-r border-gray-300"
+		  style={{ boxShadow: '2px 0 5px -2px rgba(0,0,0,0.1)' }}
+		>
+		  Ключевой запрос
+		</th>
+	      <th
+		  className="sticky top-0 left-150 bg-white z-35 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap min-w-[150px] max-w-[400px] border-r border-gray-300"
+		  style={{ boxShadow: '2px 0 5px -2px rgba(0,0,0,0.1)' }}
+		>
+		Регион
 	      </th>
 
 	      {filterPeriod === 'week' && headerDates.map(date => (
@@ -94,10 +100,16 @@ export const PositionTableView: React.FC<Props> = ({
 		        className="hover:bg-gray-50 even:bg-blue-50"
 		        style={{ height: 20 }}
 		      >
-		        <td className="sticky left-0 bg-white z-10 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 min-w-[150px] max-w-[400px] border-r border-gray-200">
-		          {keyword.keyword}
-		        </td>
-		        <td className="sticky left-[150px] bg-white z-10 px-4 py-3 whitespace-nowrap text-sm text-gray-700 min-w-[100px] max-w-[250px] border-r border-gray-200">
+		        <td
+				  className="sticky left-0 bg-white z-40 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 min-w-[150px] max-w-[400px] border-r border-gray-300"
+				  style={{ boxShadow: '2px 0 5px -2px rgba(0,0,0,0.1)' }}
+				>
+				  {keyword.keyword}
+				</td>
+		        <td
+				  className="sticky left-150 bg-white z-35 px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 min-w-[150px] max-w-[400px] border-r border-gray-300"
+				  style={{ boxShadow: '2px 0 5px -2px rgba(0,0,0,0.1)' }}
+				>
 		          {keyword.region}
 		        </td>
 
