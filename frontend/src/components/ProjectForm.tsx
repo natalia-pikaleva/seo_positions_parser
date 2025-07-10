@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Globe, Search, MapPin, Clock } from 'lucide-react';
-import { Project, KeywordData } from '../types';
+import { Project, KeywordData, KeywordCreate } from '../types';
 
 interface ProjectFormProps {
   onSubmit: (project: Omit<Project, 'id' | 'createdAt' | 'clientLink'>) => void;
@@ -81,14 +81,24 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) 
 
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      domain,
-      keywords: keywords.map(k => ({ ...k, id: crypto.randomUUID() })),
-      searchEngine,
-      schedule
-    });
-  };
+	  e.preventDefault();
+
+	  const keywordsForBackend: KeywordCreate[] = keywords.map(k => ({
+	    keyword: k.keyword,
+	    region: k.region,
+	    price_top_1_3: k.pricing.top1to3,
+	    price_top_4_5: k.pricing.top4to5,
+	    price_top_6_10: k.pricing.top6to10,
+	  }));
+
+	  onSubmit({
+	    domain,
+	    keywords: keywordsForBackend,
+	    searchEngine,
+	    schedule,
+	  });
+	};
+
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">

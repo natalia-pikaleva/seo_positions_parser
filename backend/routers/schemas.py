@@ -39,6 +39,7 @@ class KeywordCreate(KeywordBase):
 class KeywordUpdate(BaseModel):
     keyword: Optional[constr(min_length=1)] = None
     region: Optional[str] = None
+    is_check: Optional[bool] = None
     price_top_1_3: Optional[int] = Field(None, ge=0)
     price_top_4_5: Optional[int] = Field(None, ge=0)
     price_top_6_10: Optional[int] = Field(None, ge=0)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Keyword, KeywordUpdate } from '../types';
+import { enableKeywordCheck, disableKeywordCheck } from '../utils/api';
 
 interface KeywordManagerProps {
   keywords: Keyword[];
@@ -224,25 +225,54 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       )}
 
       <ul className="divide-y divide-gray-200 border border-gray-300 rounded">
-        {keywords.map(keyword => (
-          <li key={keyword.id} className="flex justify-between items-center px-4 py-2">
-            <div>
-              <div className="font-medium">{keyword.keyword}</div>
-              <div className="text-sm text-gray-600">
-                Регион: {keyword.region} | Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => startEdit(keyword)} className="text-blue-600 hover:text-blue-800" title="Редактировать">
-                Изменить
-              </button>
-              <button onClick={() => remove(keyword.id)} className="text-red-600 hover:text-red-800" title="Удалить">
-                Удалить
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+		  {keywords.map(keyword => (
+		    <li key={keyword.id} className="flex justify-between items-center px-4 py-2">
+		      <div>
+		        <div className="font-medium">{keyword.keyword}</div>
+		        <div className="text-sm text-gray-600">
+		          Регион: {keyword.region} | Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
+		        </div>
+		      </div>
+		      <div className="flex gap-2 items-center">
+		        <button
+		          onClick={() => startEdit(keyword)}
+		          className="text-blue-600 hover:text-blue-800"
+		          title="Редактировать"
+		        >
+		          Изменить
+		        </button>
+		        <button
+		          onClick={() => remove(keyword.id)}
+		          className="text-red-600 hover:text-red-800"
+		          title="Удалить"
+		        >
+		          Удалить
+		        </button>
+		        <button
+				  onClick={async () => {
+				    try {
+				      if (keyword.is_check) {
+				        await disableKeywordCheck(keyword.id);
+				      } else {
+				        await enableKeywordCheck(keyword.id);
+				      }
+				      await onUpdateKeyword(keyword.id, { is_check: !keyword.is_check });
+				    } catch (error) {
+				      alert('Не удалось изменить состояние снятия позиций');
+				    }
+				  }}
+				  className={`px-3 py-1 rounded text-white ${
+				    keyword.is_check ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+				  }`}
+				  title={keyword.is_check ? 'Отключить снятие позиций' : 'Включить снятие позиций'}
+				>
+				  {keyword.is_check ? 'Отключить' : 'Включить'}
+				</button>
+		      </div>
+		    </li>
+		  ))}
+		</ul>
+
     </div>
   );
 };

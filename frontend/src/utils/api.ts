@@ -231,3 +231,34 @@ export async function exportPositionsExcel(
 
   return await response.blob();
 }
+
+
+// Функция для включения is_check = true
+export async function enableKeywordCheck(keywordId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/projects/keywords/${keywordId}/enable`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to enable keyword check: ${errorText}`);
+  }
+}
+
+// Функция для отключения is_check = false
+export async function disableKeywordCheck(keywordId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/projects/keywords/${keywordId}/disable`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to disable keyword check: ${errorText}`);
+  }
+}
