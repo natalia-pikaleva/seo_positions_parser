@@ -5,6 +5,7 @@ import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/position
 import { fetchPositions, fetchPositionsIntervals } from '../utils/api';
 import logo  from '../assets/logo.png';
 import { PositionTableView } from './PositionTableView';
+import { PositionStats } from './PositionStats';
 
 interface ClientViewProps {
   project: Project;
@@ -377,7 +378,7 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center border-b border-gray-200">
-		  <div className="flex items-center space-x-3">
+		  <div className="flex flex-row items-center gap-2 sm:gap-3">
 		    <img src={logo}
 		      alt="Логотип"
 		      className="h-12 w-auto"
@@ -396,79 +397,61 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
             </div>
           </div>
 
-          <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-gradient-to-r from-green-50 to-green-100 p-6 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-              <span className="text-sm font-medium text-gray-700">В ТОП-3</span>
-            </div>
-            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsTop1to3.size}</div>
-            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
-          </div>
-
-           <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <Star  className="w-6 h-6 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">В ТОП-5</span>
-            </div>
-            <div className="text-3xl font-bold text-green-600 mb-1">{uniqueKeywordsTop4to5.size}</div>
-            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
-          </div>
-
-          <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <Minus className="w-6 h-6 text-yellow-600" />
-              <span className="text-sm font-medium text-gray-700">В ТОП-10</span>
-            </div>
-            <div className="text-3xl font-bold text-yellow-600 mb-1">{uniqueKeywordsTop6to10.size}</div>
-            <div className="text-sm text-gray-600">из {project.keywords.length} запросов</div>
-          </div>
-        </div>
-
+          {/* Статистика */}
+          <PositionStats
+	          top1to3={uniqueKeywordsTop1to3.size}
+	          top4to5={uniqueKeywordsTop4to5.size}
+	          top6to10={uniqueKeywordsTop6to10.size}
+	          totalKeywords={editableProject.keywords.length}
+	        />
 
 
           {/* Фильтр по периоду и ключевому слову */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-6">
             <select
               value={filter.period}
               onChange={(e) => setFilter({ ...filter, period: e.target.value as FilterOptions['period'] })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="week">Неделя</option>
               <option value="month">Месяц</option>
               <option value="custom">Произвольный период</option>
             </select>
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex flex-row gap-2 w-full sm:w-auto">
 			  <button
 			    onClick={() => setPeriodOffset(periodOffset - 1)}
-			    className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+			    className="w-full sm:w-auto text-xs sm:text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
 			  >
-			    ← Предыдущий
+			    <span className="sm:hidden">←</span>
+			    <span className="hidden sm:inline">← Предыдущий</span>
 			  </button>
+
 			  <button
 			    onClick={() => setPeriodOffset(0)}
 			    disabled={periodOffset === 0}
-			    className={`px-3 py-1 rounded ${periodOffset === 0 ? 'bg-gray-300 cursor-default' : 'bg-gray-200 hover:bg-gray-300'}`}
+			    className={`w-full sm:w-auto text-xs sm:text-sm px-3 py-1 rounded ${periodOffset === 0
+			      ? 'bg-gray-300 cursor-default'
+			      : 'bg-gray-200 hover:bg-gray-300'
+			    }`}
 			  >
-			    Текущий
+			    <span className="sm:hidden">•</span>
+			    <span className="hidden sm:inline">Текущий</span>
 			  </button>
+
 			  <button
 			    onClick={() => setPeriodOffset(periodOffset + 1)}
 			    disabled={periodOffset >= 0}
-			    className={`px-3 py-1 rounded ${periodOffset >= 0 ? 'bg-gray-300 cursor-default' : 'bg-gray-200 hover:bg-gray-300'}`}
+			    className={`w-full sm:w-auto text-xs sm:text-sm px-3 py-1 rounded ${periodOffset >= 0
+			      ? 'bg-gray-300 cursor-default'
+			      : 'bg-gray-200 hover:bg-gray-300'
+			    }`}
 			  >
-			    Следующий
+			    <span className="sm:hidden">→</span>
+			    <span className="hidden sm:inline">Следующий →</span>
 			  </button>
 			</div>
+	      </div>
 
-            <input
-              type="text"
-              placeholder="Фильтр по ключевому слову"
-              value={keywordFilter}
-              onChange={(e) => setKeywordFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
 
           {/* Таблица позиций */}
           <PositionTableView

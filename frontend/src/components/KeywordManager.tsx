@@ -174,7 +174,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
             ))}
           </select>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1">ТОП-1 до ТОП-3 (₽/день)</label>
               <PriceInput
@@ -198,27 +198,28 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
             </div>
           </div>
 
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={save}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              Сохранить
-            </button>
-            <button
-              onClick={cancel}
-              className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
-            >
-              Отмена
-            </button>
-          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+			  <button
+			    onClick={save}
+			    className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+			  >
+			    Сохранить
+			  </button>
+			  <button
+			    onClick={cancel}
+			    className="w-full sm:w-auto bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+			  >
+			    Отмена
+			  </button>
+		  </div>
+
         </div>
       )}
 
       {!isAdding && !editingKeyword && (
         <button
           onClick={startAdd}
-          className="mb-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="mb-4 sm:w-auto bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
         >
           Добавить ключевое слово
         </button>
@@ -226,14 +227,14 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 
       <ul className="divide-y divide-gray-200 border border-gray-300 rounded">
 		  {keywords.map(keyword => (
-		    <li key={keyword.id} className="flex justify-between items-center px-4 py-2">
-		      <div>
-		        <div className="font-medium">{keyword.keyword}</div>
-		        <div className="text-sm text-gray-600">
-		          Регион: {keyword.region} | Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
-		        </div>
-		      </div>
-		      <div className="flex gap-2 items-center">
+		    <li key={keyword.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center px-4 py-2 gap-2">
+				  <div>
+				    <div className="font-medium">{keyword.keyword}</div>
+				    <div className="text-sm text-gray-600">
+				      Регион: {keyword.region} | Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
+				    </div>
+				  </div>
+				  <div className="flex flex-row flex-wrap gap-2 items-center mt-2 sm:mt-0">
 		        <button
 		          onClick={() => startEdit(keyword)}
 		          className="text-blue-600 hover:text-blue-800"

@@ -17,21 +17,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">SEO Позиции</h1>
-          <p className="text-gray-600">Мониторинг позиций сайтов в поисковых системах</p>
-        </div>
-        <button
-          onClick={onCreateProject}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Создать проект
-        </button>
-      </div>
+      {/* Заголовок + кнопка */}
+	  <div className="flex flex-col sm:flex-row
+                items-center sm:items-center
+                justify-center sm:justify-between
+                gap-4 text-center sm:text-left">
+		  <div>
+		    <h1 className="text-3xl font-bold text-gray-900">SEO Позиции</h1>
+		    <p className="text-gray-600">Мониторинг позиций сайтов в поисковых системах</p>
+		  </div>
+		  <button
+		    onClick={onCreateProject}
+		    className="w-full sm:w-auto flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+		  >
+		    <Plus className="w-5 h-5" />
+		    Создать проект
+		  </button>
+	  </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+
+      {/* Статистика */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-lg">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-blue-100 rounded-lg">
