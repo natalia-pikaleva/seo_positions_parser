@@ -70,21 +70,22 @@ const MonthCalendarCard = ({
           }
           const pos = positionsMap[keyword.id]?.[formatDateKey(date)];
           return (
-            <div key={date.toISOString()} className="h-8 flex flex-col items-center justify-center">
-              <span className="text-xs text-gray-500">{date.getDate()}</span>
-				{pos && pos.position !== undefined ? (
-				  <div className="flex  items-center">
-				    <span className={`inline-flex px-1 py-0.5 text-[10px] font-semibold rounded-full ${getPositionColor(pos.position)}`}>
-				      #{pos.position}
-				    </span>
-				    {pos.cost !== undefined && (
-				      <span className="text-[10px] text-gray-600">{pos.cost}₽</span>
-				    )}
-				  </div>
-				) : (
-				  <span className="text-gray-300 text-xs">—</span>
-				)}
-            </div>
+            <div key={date.toISOString()} className="h-10 flex flex-col items-center justify-center">
+			  <span className="text-xs text-gray-500">{date.getDate()}</span>
+			  {pos && pos.position !== undefined ? (
+			    <div className="flex flex-col items-center">
+			      <span className={`inline-flex px-1 py-0.5 text-[10px] font-semibold rounded-full ${getPositionColor(pos.position)}`}>
+			        #{pos.position}
+			      </span>
+			      {pos.cost !== undefined && (
+			        <span className="text-[9px] leading-none text-gray-600 mt-0.5">{pos.cost}₽</span>
+			      )}
+			    </div>
+			  ) : (
+			    <span className="text-gray-300 text-xs">—</span>
+			  )}
+			</div>
+
           );
         })}
       </div>
