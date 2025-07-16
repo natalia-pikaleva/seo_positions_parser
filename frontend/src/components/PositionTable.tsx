@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, TrendingUp, Minus, Copy, Calendar, Star } from 'lucide-react';
+import { BarChart3, TrendingUp, Minus, Copy, Calendar, Star, Edit2 } from 'lucide-react';
 
 import { Project, FilterOptions, Position } from '../types';
 import {
@@ -335,41 +335,40 @@ console.log('Extended date groups before filter:', extendedDateGroups);
     <div className="space-y-6">
       {/* Заголовок и кнопки */}
       <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="w-6 h-6 text-blue-600" />
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+		  <div className="flex items-center gap-3">
+		    <BarChart3 className="w-6 h-6 text-blue-600" />
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{editableProject.domain}</h2>
-              <p className="text-gray-600">{editableProject.searchEngine}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
+		      <h2 className="text-2xl font-bold text-gray-900">{editableProject.domain}</h2>
+		      <p className="text-gray-600">{editableProject.searchEngine}</p>
+		    </div>
+		  </div>
+		  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full md:w-auto">
+		    <button
 		      onClick={copyClientLink}
-		      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+		      className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
 		    >
 		      <Copy className="w-4 h-4" />
 		      {showClientLink ? 'Скопировано!' : 'Ссылка для клиента'}
 		    </button>
+		    <button
+			  onClick={() => setIsEditProjectOpen(true)}
+			  className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+			>
+			  <Edit2 className="w-4 h-4" />
+			  Редактировать проект
+			</button>
 
-
-            <button
-              onClick={() => setIsEditProjectOpen(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Редактировать проект
-            </button>
-
-            <button
-              onClick={() => setIsExportOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-              disabled={isExporting}
-            >
-              <Calendar className="w-4 h-4" />
-              {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
-            </button>
-          </div>
-        </div>
+		    <button
+		      onClick={() => setIsExportOpen(true)}
+		      className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+		      disabled={isExporting}
+		    >
+		      <Calendar className="w-4 h-4" />
+		      {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
+		    </button>
+		  </div>
+		</div>
 
         {/* Статистика */}
         <PositionStats

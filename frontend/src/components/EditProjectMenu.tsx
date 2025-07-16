@@ -65,7 +65,7 @@ export const EditProjectMenu: React.FC<EditProjectMenuProps> = ({ project, onClo
     >
       <div
         ref={modalRef}
-        className="bg-white rounded-lg p-6 w-96 shadow-lg"
+        className="bg-white rounded-lg p-4 sm:p-6 w-[94vw] max-w-sm sm:max-w-md shadow-lg overflow-y-auto max-h-[95vh]"
       >
         <h2 id="edit-project-title" className="text-xl font-semibold mb-4">
           Редактировать проект
@@ -106,11 +106,11 @@ export const EditProjectMenu: React.FC<EditProjectMenuProps> = ({ project, onClo
           </select>
         </label>
 
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
-          >
+       <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 mt-4">
+	      <button
+	        onClick={onClose}
+	        className="w-full sm:w-auto px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+	      >
             Отмена
           </button>
           <button

@@ -157,22 +157,23 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) 
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Ключевые запросы и ценообразование</h3>
-            <button
-              type="button"
-              onClick={addKeyword}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Добавить запрос
-            </button>
-          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 mb-4">
+			  <h3 className="text-lg font-semibold text-gray-900">Ключевые запросы и ценообразование</h3>
+			  <button
+			    type="button"
+			    onClick={addKeyword}
+			    className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+			  >
+			    <Plus className="w-4 h-4" />
+			    Добавить запрос
+			  </button>
+			</div>
+
 
           <div className="space-y-4">
             {keywords.map((keyword, index) => (
 			  <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-			    <div className="flex items-center justify-between mb-3">
+			    <div className="flex flex-col md:flex-row gap-2 md:gap-0 items-stretch md:items-center mb-3">
 			      <input
 			        type="text"
 			        value={keyword.keyword}
