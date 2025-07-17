@@ -62,7 +62,11 @@ class Project(Base):
 
 class Position(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    keyword_id = Column(UUID(as_uuid=True), ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    keyword_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("keywords.id", ondelete="SET NULL"),
+        nullable=True
+    )
     checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     position = Column(Integer, nullable=True)  # null если нет в ТОП-100
     previous_position = Column(Integer, nullable=True)
