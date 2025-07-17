@@ -255,3 +255,25 @@ def parse_positions_task():
             session.close()
 
     return "Парсинг завершён"
+
+
+@celery_app.task
+def parse_positions_by_project_task(project_id: str):
+    # Логика парсинга только по одному проекту
+    session = SessionLocal()
+    try:
+        project = session.get(Project, project_id)
+        if not project:
+            logger.error(f"Проект {project_id} не найден")
+            return
+        for keyword in project.keywords:
+            if not keyword.is_check:
+                logger.info(f"Пропускаем ключевое слово '{keyword.keyword}' с is_check=False в проекте {project.id}")
+                continue
+            parse_and_save_position(session, project, keyword)
+        logger.info(f"Парсер успешно завершён для проекта {project.id}")
+    except Exception as e:
+        logger.error(f"Ошибка при парсинге проекта {project_id}: {e}")
+    finally:
+        session.close()
+    return "Парсинг завершён"

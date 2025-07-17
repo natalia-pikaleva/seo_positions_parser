@@ -15,7 +15,7 @@ from database.db_init import get_db
 from database.models import Project, Keyword, Position
 from routers.schemas import ProjectCreate, ProjectUpdate, KeywordUpdate, ProjectOut, ClientProjectOut, \
     PositionOut, KeywordCreate, KeywordUpdate, KeywordOut, IntervalSumOut, KeywordIntervals
-from services.task import parse_positions_task
+from services.task import parse_positions_by_project_task
 from services.api_utils import generate_client_link
 
 logger = logging.getLogger(__name__)
@@ -276,12 +276,13 @@ async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db
             raise HTTPException(status_code=404, detail="Project not found")
 
         logger.info(f"Запуск задачи parse_positions_task для проекта {project_id}")
-        # parse_positions_task.delay(str(project_id))
-        return {"message": "Парсер запущен через Celery"}
+        # Запуск задачи только для одного проекта
+        parse_positions_by_project_task.delay(str(project_id))
+        return {"message": f"Парсер запущен для проекта {project_id} через Celery"}
     except HTTPException:
         raise
     except Exception as e:
-        logging.error("Failed to check project: %s", e)
+        logger.error("Failed to check project: %s", e)
         raise HTTPException(status_code=500, detail="Failed to check project")
 
 

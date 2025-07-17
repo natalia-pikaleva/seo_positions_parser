@@ -34,6 +34,22 @@ export async function updateProject(id: string, project: Partial<ProjectCreate>)
   return res.json();
 }
 
+export async function runProjectParsing(projectId: string): Promise<{message: string}> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!res.ok) {
+    let errorText = 'Failed to start project parsing';
+    try {
+      const errorJson = await res.json();
+      if (errorJson?.detail) errorText = errorJson.detail;
+    } catch {}
+    throw new Error(errorText);
+  }
+  return res.json();
+}
+
 export async function updateKeyword(
   projectId: string,
   keywordId: string,
