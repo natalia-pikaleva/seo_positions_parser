@@ -28,17 +28,13 @@ interface Props {
 const daysOfWeek = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 function getMonthMatrix(dates) {
-  // dates отсортированы, берем первый
   const firstDate = dates[0];
-  const lastDate = dates[dates.length - 1];
-  const firstDay = firstDate.getDay() || 7; // JS: 0=Вс, но у нас 1=Пн
-  // Начинаем с понедельника
+  const firstDay = firstDate.getDay() || 7;
   const calendar = [];
   let week = [];
-  // Заполняем пустыми ячейками до первого дня месяца
   for (let i = 1; i < firstDay; i++) week.push(null);
 
-  dates.forEach(date => {
+  dates.forEach((date) => {
     week.push(date);
     if (week.length === 7) {
       calendar.push(week);
@@ -52,10 +48,48 @@ function getMonthMatrix(dates) {
   return calendar;
 }
 
-const MonthCalendarCard = ({
-  dates, keyword, positionsMap, formatDateKey, getPositionColor
+type MonthCalendarCardWithIntervalsProps = {
+  dates: Date[];
+  keyword: any;
+  positionsMap: Record<string, Record<string, any>>;
+  formatDateKey: (date: Date) => string;
+  getPositionColor: (pos: number) => string;
+  dateGroups: {
+    dates: Date[];
+    startDate: string;
+    endDate: string;
+    display_start_date?: string;
+    display_end_date?: string;
+    isLastPartial?: boolean;
+  }[];
+  intervalSums: Record<string, Record<string, number>>;
+};
+
+export const MonthCalendarCardWithIntervals: React.FC<MonthCalendarCardWithIntervalsProps> = ({
+  dates,
+  keyword,
+  positionsMap,
+  formatDateKey,
+  getPositionColor,
+  dateGroups,
+  intervalSums
 }) => {
   const matrix = getMonthMatrix(dates);
+
+  // Соберём даты, по которым надо выводить сумму, и к какой группе она относится
+  const sumsByDateIso: Record<string, {intervalLabel: string, sum: number}> = {};
+  dateGroups.forEach(group => {
+    if (!group.isLastPartial && group.dates.length > 0) {
+      const lastDate = group.dates[group.dates.length - 1];
+      const iso = lastDate.toISOString().slice(0, 10); // YYYY-MM-DD
+      const label = `${group.startDate} - ${group.endDate}`;
+      if (intervalSums[keyword.id]?.[label] !== undefined) {
+        sumsByDateIso[iso] = {intervalLabel: label, sum: intervalSums[keyword.id][label]};
+      }
+    }
+  });
+
+  // Рендерим недели; на неделе, где есть последний день любого группы, отрисуем сумму после строки недели (row)
   return (
     <div>
       <div className="flex mb-2">
@@ -63,35 +97,64 @@ const MonthCalendarCard = ({
           <div key={d} className="flex-1 text-center text-xs font-semibold text-blue-700">{d}</div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
-        {matrix.flat().map((date, i) => {
-          if (!date) {
-            return <div key={i} className="h-8"></div>;
-          }
-          const pos = positionsMap[keyword.id]?.[formatDateKey(date)];
-          return (
-            <div key={date.toISOString()} className="h-10 flex flex-col items-center justify-center">
-			  <span className="text-xs text-gray-500">{date.getDate()}</span>
-			  {pos && pos.position !== undefined ? (
-			    <div className="flex flex-col items-center">
-			      <span className={`inline-flex px-1 py-0.5 text-[10px] font-semibold rounded-full ${getPositionColor(pos.position)}`}>
-			        #{pos.position}
-			      </span>
-			      {pos.cost !== undefined && (
-			        <span className="text-[9px] leading-none text-gray-600 mt-0.5">{pos.cost}₽</span>
-			      )}
-			    </div>
-			  ) : (
-			    <span className="text-gray-300 text-xs">—</span>
-			  )}
-			</div>
+      <div>
+        {matrix.map((week, weekIdx) => {
+          // Проверим, нужно ли ниже этой строки (недели) нарисовать сумму за 2 недели
+          let intervalIso = null;
+          let intervalSum = null;
+          let intervalLabel = null;
 
+          // Пробегаем по дням недели слева-направо, если на этом ряду "последний день" группы - выводим после недели!
+          for (const d of week) {
+            if (d && sumsByDateIso[d.toISOString().slice(0,10)]) {
+              intervalIso = d.toISOString().slice(0,10);
+              intervalSum = sumsByDateIso[intervalIso].sum;
+              intervalLabel = sumsByDateIso[intervalIso].intervalLabel;
+              break; // если на неделе может быть только один такой день (обычно так и будет)
+            }
+          }
+
+          return (
+            <React.Fragment key={weekIdx}>
+              <div className="grid grid-cols-7 gap-1">
+                {week.map((date, i) => {
+                  if (!date) return <div key={i} className="h-8"></div>;
+                  const pos = positionsMap[keyword.id]?.[formatDateKey(date)];
+                  return (
+                    <div key={date.toISOString()} className="h-10 flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500">{date.getDate()}</span>
+                      {pos && pos.position !== undefined ? (
+                        <div className="flex flex-col items-center">
+                          <span className={`inline-flex px-1 py-0.5 text-[10px] font-semibold rounded-full ${getPositionColor(pos.position)}`}>
+                            #{pos.position}
+                          </span>
+                          {pos.cost !== undefined && (
+                            <span className="text-[9px] leading-none text-gray-600 mt-0.5">{pos.cost}₽</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Если надо, показываем сумму сразу после недели */}
+              {intervalIso && (
+                <div className="mt-1 mb-2 flex justify-end">
+                  <span className="inline-block bg-blue-200 text-blue-900 text-xs font-semibold rounded px-2 py-1">
+                    Сумма {intervalLabel}: {intervalSum}₽
+                  </span>
+                </div>
+              )}
+            </React.Fragment>
           );
         })}
       </div>
     </div>
   );
 };
+
 
 export const PositionTableView: React.FC<Props> = ({
   editableProject,
@@ -336,13 +399,15 @@ export const PositionTableView: React.FC<Props> = ({
 	              <div className="text-center text-sm font-semibold text-blue-700 mb-2">
 	                {dates.length > 0 && dates[0].toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}
 	              </div>
-	              <MonthCalendarCard
-	                dates={dates}
-	                keyword={keyword}
-	                positionsMap={positionsMap}
-	                formatDateKey={formatDateKey}
-	                getPositionColor={getPositionColor}
-	              />
+	              <MonthCalendarCardWithIntervals
+				  dates={dates}
+				  keyword={keyword}
+				  positionsMap={positionsMap}
+				  formatDateKey={formatDateKey}
+				  getPositionColor={getPositionColor}
+				  dateGroups={dateGroups}
+				  intervalSums={intervalSums}
+				/>
 	            </>
 	          )
 	        : (
