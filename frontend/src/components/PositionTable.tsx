@@ -9,6 +9,7 @@ import {
   updateKeyword,
   deleteKeyword,
   exportPositionsExcel,
+  runProjectParsing
 } from '../utils/api';
 import { getPositionColor, getTrendIcon, getTrendColor, generateClientLink } from '../utils/positionUtils';
 import { KeywordManager } from './KeywordManager';
@@ -102,6 +103,8 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  const [positions, setPositions] = useState<Position[]>([]);
 	  const [showClientLink, setShowClientLink] = useState(false);
 	  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
+	  const [parsing, setParsing] = useState(false);
+      const [parsingMsg, setParsingMsg] = useState<string | null>(null);
 
 
 	  const copyClientLink = async () => {
@@ -367,7 +370,34 @@ console.log('Extended date groups before filter:', extendedDateGroups);
 		      <Calendar className="w-4 h-4" />
 		      {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
 		    </button>
+		    <button
+			  onClick={async () => {
+			    setParsing(true);
+			    setParsingMsg(null);
+			    try {
+			      const res = await runProjectParsing(project.id);
+			      setParsingMsg(res.message || 'Парсер запущен');
+			    } catch (e: any) {
+			      setParsingMsg(
+			        e?.message?.includes('not found')
+			          ? 'Проект не найден'
+			          : e?.message || 'Ошибка запуска парсинга'
+			      );
+			    } finally {
+			      setParsing(false);
+			      setTimeout(() => setParsingMsg(null), 3000);
+			    }
+			  }}
+			  className={`w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors ${parsing ? 'opacity-60 cursor-wait' : ''}`}
+			  disabled={parsing}
+			  title="Запустить обновление позиций">
+			  <TrendingUp className="w-4 h-4" />
+			  {parsing ? 'Запуск...' : 'Обновить позиции'}
+			</button>
 		  </div>
+		  {parsingMsg && (
+			  <div className="mt-1 text-sm text-blue-700">{parsingMsg}</div>
+			)}
 		</div>
 
         {/* Статистика */}

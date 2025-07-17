@@ -18,6 +18,6 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "parse_positions_nightly": {
         "task": "services.task.parse_positions_task",  # полный путь к задаче
-        "schedule": crontab(hour=2, minute=00),
+        "schedule": crontab(hour=12, minute=00),
     },
 }
