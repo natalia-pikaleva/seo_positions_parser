@@ -278,7 +278,7 @@ async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db
         logger.info(f"Запуск задачи parse_positions_task для проекта {project_id}")
         # Запуск задачи только для одного проекта
         parse_positions_by_project_task.delay(str(project_id))
-        return {"message": f"Парсер запущен для проекта {project_id} через Celery"}
+        return {"message": f"Парсер запущен для проекта {project.domain}"}
     except HTTPException:
         raise
     except Exception as e:
