@@ -53,12 +53,12 @@ export const PositionFilters: React.FC<Props> = ({
 
     </div>
 
-    <input
+    {/*<input
       type="text"
       placeholder="Фильтр по ключевому слову"
       value={keywordFilter}
       onChange={(e) => setKeywordFilter(e.target.value)}
       className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
+    />*/}
   </div>
 );

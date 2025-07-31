@@ -77,6 +77,13 @@ class IntervalSumOut(BaseModel):
     display_end_date: date  # Конец интервала для отображения
     sum_cost: float  # Сумма по полному интервалу
 
+    days_top3: int = 0
+    cost_top3: int = 0
+    days_top5: int = 0
+    cost_top5: int = 0
+    days_top10: int = 0
+    cost_top10: int = 0
+
 
 class KeywordIntervals(BaseModel):
     keyword_id: UUID

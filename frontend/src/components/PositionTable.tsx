@@ -20,6 +20,7 @@ import { ExportModal } from './ExportModal';
 import { PositionFilters } from './PositionFilters';
 import { PositionStats } from './PositionStats';
 import { PositionTableView } from './PositionTableView';
+import { ExcelLikeTableView } from './ExcelLikeTableView'
 
 interface PositionTableProps {
   project: Project;
@@ -56,7 +57,6 @@ function getDatesForPeriod(period: FilterOptions['period'], offset: number): Dat
       dates.push(d);
     }
   } else if (period === 'month') {
-    // Можно использовать вашу функцию getDatesForCurrentMonth
     return getDatesForCurrentMonth(offset);
   }
 
@@ -105,6 +105,8 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
 	  const [parsing, setParsing] = useState(false);
       const [parsingMsg, setParsingMsg] = useState<string | null>(null);
+
+
 
 
 	  const copyClientLink = async () => {
@@ -177,55 +179,84 @@ export const PositionTable: React.FC<PositionTableProps> = ({
     loadPositions();
   }, [project?.id, filter.period, periodOffset]);
 
+  interface IntervalSumData {
+	  daysTop3: number;
+	  costTop3: number;
+	  daysTop5: number;
+	  costTop5: number;
+	  daysTop10: number;
+	  costTop10: number;
+	}
+
   // Загрузка агрегированных сумм по интервалам
-  useEffect(() => {
-	  async function loadIntervalSums() {
-	    if (!project?.id) return;
+  async function loadIntervalSums() {
+	  if (!project?.id) return;
 
-	    try {
-	      const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+	  try {
+	    const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
 
-	      // Формируем карту сумм по ключевым словам и интервалам
-	      const sumsMap: Record<string, Record<string, number>> = {};
-	      data.forEach(({ keyword_id, intervals }) => {
-	        sumsMap[keyword_id] = {};
-	        intervals.forEach(({ start_date, end_date, sum_cost }) => {
-	          const label = `${start_date} - ${end_date}`;
-	          sumsMap[keyword_id][label] = sum_cost;
-	        });
+	    interface IntervalSumData {
+	      daysTop3: number;
+	      costTop3: number;
+	      daysTop5: number;
+	      costTop5: number;
+	      daysTop10: number;
+	      costTop10: number;
+	    }
+
+	    const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
+
+	    data.forEach(({ keyword_id, intervals }) => {
+	      sumsMap[keyword_id] = {};
+	      intervals.forEach((interval) => {
+	        const label = `${interval.start_date} - ${interval.end_date}`;
+	        sumsMap[keyword_id][label] = {
+	          daysTop3: interval.days_top3 ?? 0,
+	          costTop3: interval.cost_top3 ?? 0,
+	          daysTop5: interval.days_top5 ?? 0,
+	          costTop5: interval.cost_top5 ?? 0,
+	          daysTop10: interval.days_top10 ?? 0,
+	          costTop10: interval.cost_top10 ?? 0,
+	        };
 	      });
-	      setIntervalSums(sumsMap);
+	    });
 
-	      // Формируем массив интервалов с датами из всех ключевых слов (берём первый, если уверены, что одинаковые)
-	      if (data.length > 0) {
-	        const intervalsGroups = data[0].intervals.map(interval => {
-	          const start = new Date(interval.display_start_date);
-	          const end = new Date(interval.display_end_date);
-	          const dates: Date[] = [];
-	          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-	            dates.push(new Date(d));
-	          }
-	          return {
-	            dates,
-	            startDate: interval.start_date,
-	            endDate: interval.end_date,
-	            display_start_date: interval.display_start_date,
-	            display_end_date: interval.display_end_date,
-	          };
-	        }).filter(group => group.dates.length > 0);
+	    setIntervalSums(sumsMap);
 
-	        setServerIntervals(intervalsGroups);
-	      } else {
-	        setServerIntervals([]);
-	      }
-	    } catch (error) {
-	      console.error('Ошибка загрузки интервалов:', error);
+	    // Формируем массив интервалов с датами из первого ключевого слова (если оно есть)
+	    if (data.length > 0) {
+	      const intervalsGroups = data[0].intervals.map(interval => {
+	        const start = new Date(interval.display_start_date);
+	        const end = new Date(interval.display_end_date);
+	        const dates: Date[] = [];
+	        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	          dates.push(new Date(d));
+	        }
+	        return {
+	          dates,
+	          startDate: interval.start_date,
+	          endDate: interval.end_date,
+	          display_start_date: interval.display_start_date,
+	          display_end_date: interval.display_end_date,
+	          label: `${interval.start_date} - ${interval.end_date}`,  // Добавьте, если нужно использовать
+	          displayLabel: `${start.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})} - ${end.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})}`
+	        };
+	      }).filter(group => group.dates.length > 0);
+
+	      setServerIntervals(intervalsGroups);
+	    } else {
 	      setServerIntervals([]);
 	    }
+	  } catch (error) {
+	    console.error('Ошибка загрузки интервалов:', error);
+	    setServerIntervals([]);
 	  }
+	}
 
+	useEffect(() => {
 	  loadIntervalSums();
 	}, [project?.id, filter.period, periodOffset]);
+
 
   // Вычисление последнего дня месяца с учётом periodOffset
   const getLastDayOfMonth = (date: Date): string => {
@@ -246,7 +277,6 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  );
 	}, [serverIntervals]);
 
-	console.log('sortedIntervals before map:', sortedIntervals);
 
 // Функция сравнения дат по дню, месяцу и году
 const isSameDay = (date1: Date, date2: Date): boolean =>
@@ -265,7 +295,14 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
   // Помечаем последний интервал без проверки по дате
   const isLastPartial = isLast && isPartial;
 
-  return { ...group, isLastPartial };
+  // Формируем понятный label, например "15.07 - 28.07"
+  const label = `${group.startDate} - ${group.endDate}`; // ISO формат, ключ для intervalSums
+  const displayLabel = `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`;
+
+  return { ...group,
+	  isLastPartial,
+	  label: `${group.startDate} - ${group.endDate}`,  // ISO-формат ключа!!!
+      displayLabel: `${new Date(group.startDate).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})} - ${new Date(group.endDate).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})}`, };
 }).filter(group => {
   if (!group.dates || group.dates.length === 0) return false;
 
@@ -276,11 +313,6 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
   const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
   return diffDays >= 14;
 });
-
-
-console.log('Extended date groups before filter:', extendedDateGroups);
-
-
 
   // Форматирование даты для ключа
   const formatDateKey = (date: Date) => {
@@ -317,6 +349,7 @@ console.log('Extended date groups before filter:', extendedDateGroups);
     );
   }, [positions, filteredKeywords]);
 
+
   const uniqueKeywordsWithTop4to5 = useMemo(() => {
     return new Set(
       positions
@@ -333,8 +366,12 @@ console.log('Extended date groups before filter:', extendedDateGroups);
     );
   }, [positions, filteredKeywords]);
 
+console.log('dateGroups:', extendedDateGroups);
+
+
 
   return (
+
     <div className="space-y-6">
       {/* Заголовок и кнопки */}
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -401,12 +438,12 @@ console.log('Extended date groups before filter:', extendedDateGroups);
 		</div>
 
         {/* Статистика */}
-        <PositionStats
+        {/*<PositionStats
           top1to3={uniqueKeywordsWithTop1to3.size}
           top4to5={uniqueKeywordsWithTop4to5.size}
           top6to10={uniqueKeywordsWithTop6to10.size}
           totalKeywords={editableProject.keywords.length}
-        />
+        />*/}
 
         {/* Фильтры */}
         <PositionFilters
@@ -419,7 +456,7 @@ console.log('Extended date groups before filter:', extendedDateGroups);
         />
 
         {/* Таблица позиций */}
-        <PositionTableView
+        {/*<PositionTableView
           editableProject={editableProject}
           filteredKeywords={filteredKeywords}
           positionsMap={positionsMap}
@@ -429,7 +466,16 @@ console.log('Extended date groups before filter:', extendedDateGroups);
           filterPeriod={filter.period}
           intervalSums={intervalSums}
           formatDateKey={formatDateKey}
-        />
+        />*/}
+
+        {/* Таблица данных в виде Эксель */}
+        <ExcelLikeTableView
+		  domain={editableProject.domain}
+		  positions={positions}
+		  keywords={editableProject.keywords}
+		  intervalSums={intervalSums}
+		  dateGroups={extendedDateGroups}
+		/>
 
         {/* Остальные компоненты */}
         <KeywordManager

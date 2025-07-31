@@ -411,10 +411,16 @@ async def get_positions_intervals(
                 relevant_intervals.append((start_dt, end_dt, start_dt, end_dt))
 
         # 5. Получаем ключевые слова проекта
-        keywords_result = await db.execute(select(Keyword.id).where(Keyword.project_id == project_id))
-        keyword_ids = [k[0] for k in keywords_result.all()]
-        if not keyword_ids:
+        keywords_result = await db.execute(
+            select(Keyword).where(Keyword.project_id == project_id)
+        )
+        keywords = keywords_result.scalars().all()
+
+        if not keywords:
             return []
+
+        keyword_ids = [k.id for k in keywords]
+        keywords_map = {k.id: k for k in keywords}
 
         # 6. Загружаем позиции для ключевых слов в расширенном диапазоне дат
         fetch_start_date = min(i[0] for i in relevant_intervals) - timedelta(days=14)
@@ -436,23 +442,46 @@ async def get_positions_intervals(
 
         # 8. Считаем суммы по интервалам для каждого ключевого слова
         results = []
+
+        keywords_map = {k.id: k for k in keywords}
+
         for k_id in keyword_ids:
+            keyword = keywords_map[k_id]
             intervals_data = []
             for start_dt, end_dt, display_start, display_end in relevant_intervals:
-                total_cost = 0
+                days_top3 = 0
+                days_top5 = 0
+                days_top10 = 0
+
                 current_date = start_dt
                 while current_date <= end_dt:
                     pos = positions_map.get(k_id, {}).get(current_date)
-                    if pos and pos.cost:
-                        total_cost += pos.cost
+                    if pos and pos.position is not None:
+                        if 1 <= pos.position <= 3:
+                            days_top3 += 1
+                        elif 4 <= pos.position <= 5:
+                            days_top5 += 1
+                        elif 6 <= pos.position <= 10:
+                            days_top10 += 1
                     current_date += timedelta(days=1)
+
+                cost_top3 = days_top3 * (keyword.price_top_1_3 or 0)
+                cost_top5 = days_top5 * (keyword.price_top_4_5 or 0)
+                cost_top10 = days_top10 * (keyword.price_top_6_10 or 0)
+
                 intervals_data.append(
                     IntervalSumOut(
                         start_date=start_dt,
                         end_date=end_dt,
                         display_start_date=display_start,
                         display_end_date=display_end,
-                        sum_cost=total_cost
+                        sum_cost=cost_top3 + cost_top5 + cost_top10,
+                        days_top3=days_top3,
+                        cost_top3=cost_top3,
+                        days_top5=days_top5,
+                        cost_top5=cost_top5,
+                        days_top10=days_top10,
+                        cost_top10=cost_top10,
                     )
                 )
             results.append(KeywordIntervals(keyword_id=k_id, intervals=intervals_data))
