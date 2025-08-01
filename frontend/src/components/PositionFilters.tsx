@@ -26,7 +26,7 @@ export const PositionFilters: React.FC<Props> = ({
     >
       <option value="week">Неделя</option>
       <option value="month">Месяц</option>
-      <option value="custom">Произвольный период</option>
+      {/*<option value="custom">Произвольный период</option>*/}
     </select>
     <div className="flex justify-center sm:justify-start items-center gap-2 mb-4">
       <button
