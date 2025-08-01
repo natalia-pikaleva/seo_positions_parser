@@ -149,7 +149,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
   };
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 flex flex-col h-full min-h-0">
       <h3 className="text-lg font-semibold mb-2">Ключевые слова</h3>
 
       {(isAdding || editingKeyword) && (
@@ -219,13 +219,13 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       {!isAdding && !editingKeyword && (
         <button
           onClick={startAdd}
-          className="mb-4 sm:w-auto bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="mb-4 w-auto self-start sm:w-auto bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
         >
           Добавить ключевое слово
         </button>
       )}
 
-      <ul className="divide-y divide-gray-200 border border-gray-300 rounded max-h-64 overflow-y-auto">
+      <ul className="divide-y divide-gray-200 border border-gray-300 rounded overflow-y-auto flex-grow min-h-0">
 		  {keywords.map(keyword => (
 		    <li key={keyword.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center px-4 py-2 gap-2">
 				  <div>
