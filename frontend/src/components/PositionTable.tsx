@@ -186,6 +186,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  costTop5: number;
 	  daysTop10: number;
 	  costTop10: number;
+	  sumCost: number;
 	}
 
   // Загрузка агрегированных сумм по интервалам
@@ -202,6 +203,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	      costTop5: number;
 	      daysTop10: number;
 	      costTop10: number;
+	      sumCost: number;
 	    }
 
 	    const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
@@ -217,6 +219,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	          costTop5: interval.cost_top5 ?? 0,
 	          daysTop10: interval.days_top10 ?? 0,
 	          costTop10: interval.cost_top10 ?? 0,
+	          sumCost: interval.sum_cost ?? 0,
 	        };
 	      });
 	    });

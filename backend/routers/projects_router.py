@@ -400,15 +400,15 @@ async def get_positions_intervals(
         relevant_intervals = []
         for start_dt, end_dt in all_biweekly_intervals:
             if period_display_start and period_display_end:
-                if start_dt <= period_display_end and end_dt >= period_display_start:
+                # Добавляем условие, что интервал не проходит за текущую дату
+                if start_dt <= period_display_end and end_dt >= period_display_start and end_dt <= current_utc_date:
                     display_start = max(start_dt, period_display_start)
-                    display_end = min(end_dt,
-                                      period_display_end)  # <-- Правильно: обрезаем display_end по period_display_end
+                    display_end = min(end_dt, period_display_end)
 
                     relevant_intervals.append((start_dt, end_dt, display_start, display_end))
             else:
-                # Если период не задан, возвращаем все интервалы целиком
-                relevant_intervals.append((start_dt, end_dt, start_dt, end_dt))
+                if end_dt <= current_utc_date:
+                    relevant_intervals.append((start_dt, end_dt, start_dt, end_dt))
 
         # 5. Получаем ключевые слова проекта
         keywords_result = await db.execute(
@@ -477,11 +477,11 @@ async def get_positions_intervals(
                         display_end_date=display_end,
                         sum_cost=cost_top3 + cost_top5 + cost_top10,
                         days_top3=days_top3,
-                        cost_top3=cost_top3,
+                        cost_top3=keyword.price_top_1_3,
                         days_top5=days_top5,
-                        cost_top5=cost_top5,
+                        cost_top5=keyword.price_top_4_5,
                         days_top10=days_top10,
-                        cost_top10=cost_top10,
+                        cost_top10=keyword.price_top_6_10,
                     )
                 )
             results.append(KeywordIntervals(keyword_id=k_id, intervals=intervals_data))
