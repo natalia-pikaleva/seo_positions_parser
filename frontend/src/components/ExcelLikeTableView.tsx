@@ -216,6 +216,7 @@ export function ExcelLikeTableView({
     }, 0);
   };
 
+  // Колонки для вкладок с итогами за день
   function getColumnsForDateWithTotal(dateStr: string, totalCost: number): GridColDef[] {
     return [
       { field: 'keyword', headerName: 'Ключевое слово', width: 250, headerClassName: 'column-header' },
@@ -247,17 +248,39 @@ export function ExcelLikeTableView({
   }
 
   // Колонки для вкладок с итогами за 14-дневные периоды
-  const intervalColumns: GridColDef[] = [
-    { field: 'serial', headerName: '№', width: 80, headerClassName: 'column-header' },
-    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
-    { field: 'daysTop3', headerName: 'ТОП-3 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-    { field: 'costTop3', headerName: 'Стоимость ТОП-3', width: 120, type: 'number', headerClassName: 'column-header' },
-    { field: 'daysTop5', headerName: 'ТОП-5 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-    { field: 'costTop5', headerName: 'Стоимость ТОП-5', width: 120, type: 'number', headerClassName: 'column-header' },
-    { field: 'daysTop10', headerName: 'ТОП-10 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-    { field: 'costTop10', headerName: 'Стоимость ТОП-10', width: 120, type: 'number', headerClassName: 'column-header' },
-    { field: 'totalCost', headerName: 'Итог по ключевому запросу', width: 200, type: 'number', headerClassName: 'column-header' },
-  ];
+  function getColumnsForIntervalWithSummary(totalSum: number): GridColDef[] {
+	  return [
+	    { field: 'serial', headerName: '№', width: 80, headerClassName: 'column-header' },
+	    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
+	    { field: 'daysTop3', headerName: 'ТОП-3 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop3', headerName: 'Стоимость ТОП-3', width: 120, type: 'number', headerClassName: 'column-header' },
+	    { field: 'daysTop5', headerName: 'ТОП-5 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop5', headerName: 'Стоимость ТОП-5', width: 120, type: 'number', headerClassName: 'column-header' },
+	    { field: 'daysTop10', headerName: 'ТОП-10 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop10', headerName: 'Стоимость ТОП-10', width: 130, type: 'number', headerClassName: 'column-header' },
+	    {
+	      field: 'totalCost',
+	      headerName: 'Итог по ключевому запросу',
+	      width: 180,
+	      type: 'number',
+	      headerClassName: 'column-header',
+	      // renderCell не нужен, обычно это число в каждой строке
+	    },
+	    {
+	      field: 'totalSummary',
+	      headerName: `Итого за 2 недели: ${totalSum.toLocaleString('ru-RU')} руб.`,
+	      width: 200,
+	      sortable: false,
+	      filterable: false,
+	      disableColumnMenu: true,
+	      headerClassName: 'column-header',
+	      renderCell: () => null, // Чтобы ячейки пустые были
+	    },
+	  ];
+	}
+
+
+
 
   // Формирование строк для вкладок итогов по интервалам
   const getRowsByInterval = (intervalLabel: string) => {
@@ -272,7 +295,8 @@ export function ExcelLikeTableView({
       const daysTop10 = data.daysTop10 ?? 0;
       const costTop10 = data.costTop10 ?? 0;
 
-      const totalCost = costTop3 + costTop5 + costTop10;
+
+      const totalCost = data.sumCost ?? 0;
 
       return {
         id: kw.id,
@@ -404,20 +428,21 @@ export function ExcelLikeTableView({
 	          return null;
 	        }
 	        const intervalKey = tab.interval.label;
-	        console.log('Using interval key for data:', intervalKey);
+			const rows = getRowsByInterval(intervalKey);
+			const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
 
-	        return (
-	          <TabPanel key={`interval-panel-${intervalKey}`}>
-	            <DataGrid
-	              rows={getRowsByInterval(intervalKey)}
-	              columns={intervalColumns}
-	              pageSize={10}
-	              rowsPerPageOptions={[10, 20, 50]}
-	              disableSelectionOnClick
-	              autoHeight
-	              sx={dataGridHeaderSx}
-	            />
-	          </TabPanel>
+			return (
+			  <TabPanel key={`interval-panel-${intervalKey}`}>
+			    <DataGrid
+			      rows={rows}
+			      columns={getColumnsForIntervalWithSummary(totalSumForInterval)}
+			      pageSize={10}
+			      rowsPerPageOptions={[10, 20, 50]}
+			      disableSelectionOnClick
+			      autoHeight
+			      sx={dataGridHeaderSx}
+			    />
+			  </TabPanel>
 	        );
 	      }
 	    })}
