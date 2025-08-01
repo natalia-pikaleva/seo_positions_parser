@@ -375,7 +375,7 @@ console.log('dateGroups:', extendedDateGroups);
 
   return (
 
-    <div className="space-y-6">
+    <div className="space-y-6 flex flex-col h-[80vh]">
       {/* Заголовок и кнопки */}
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
@@ -472,32 +472,36 @@ console.log('dateGroups:', extendedDateGroups);
         />*/}
 
         {/* Таблица данных в виде Эксель */}
-        <ExcelLikeTableView
-		  domain={editableProject.domain}
-		  positions={positions}
-		  keywords={editableProject.keywords}
-		  intervalSums={intervalSums}
-		  dateGroups={extendedDateGroups}
-		/>
+        <div className="flex-shrink-0 h-1/2 min-h-0 overflow-auto">
+	        <ExcelLikeTableView
+			  domain={editableProject.domain}
+			  positions={positions}
+			  keywords={editableProject.keywords}
+			  intervalSums={intervalSums}
+			  dateGroups={extendedDateGroups}
+			/>
+		</div>
 
         {/* Остальные компоненты */}
-        <KeywordManager
-          keywords={editableProject.keywords}
-          onAddKeyword={async (keywordData) => {
-            const newKeyword = await createKeyword(project.id, keywordData);
-            onProjectLoaded({ ...editableProject, keywords: [...editableProject.keywords, newKeyword] });
-          }}
-          onUpdateKeyword={async (id, keywordData) => {
-            const updatedKeyword = await updateKeyword(project.id, id, keywordData);
-            const updatedKeywords = editableProject.keywords.map(k => k.id === id ? updatedKeyword : k);
-            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
-          }}
-          onDeleteKeyword={async (id) => {
-            await deleteKeyword(project.id, id);
-            const updatedKeywords = editableProject.keywords.filter(k => k.id !== id);
-            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
-          }}
-        />
+        <div className="mb-6 flex flex-col h-full min-h-0">
+	        <KeywordManager
+	          keywords={editableProject.keywords}
+	          onAddKeyword={async (keywordData) => {
+	            const newKeyword = await createKeyword(project.id, keywordData);
+	            onProjectLoaded({ ...editableProject, keywords: [...editableProject.keywords, newKeyword] });
+	          }}
+	          onUpdateKeyword={async (id, keywordData) => {
+	            const updatedKeyword = await updateKeyword(project.id, id, keywordData);
+	            const updatedKeywords = editableProject.keywords.map(k => k.id === id ? updatedKeyword : k);
+	            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
+	          }}
+	          onDeleteKeyword={async (id) => {
+	            await deleteKeyword(project.id, id);
+	            const updatedKeywords = editableProject.keywords.filter(k => k.id !== id);
+	            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
+	          }}
+	        />
+	    </div>
 
         {isEditProjectOpen && (
           <EditProjectMenu
