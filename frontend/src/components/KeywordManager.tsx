@@ -225,7 +225,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
         </button>
       )}
 
-      <ul className="divide-y divide-gray-200 border border-gray-300 rounded">
+      <ul className="divide-y divide-gray-200 border border-gray-300 rounded max-h-64 overflow-y-auto">
 		  {keywords.map(keyword => (
 		    <li key={keyword.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center px-4 py-2 gap-2">
 				  <div>
