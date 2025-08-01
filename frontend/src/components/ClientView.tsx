@@ -6,6 +6,7 @@ import { fetchPositions, fetchPositionsIntervals } from '../utils/api';
 import logo  from '../assets/logo.png';
 import { PositionTableView } from './PositionTableView';
 import { PositionStats } from './PositionStats';
+import { ExcelLikeTableView } from './ExcelLikeTableView'
 
 interface ClientViewProps {
   project: Project;
@@ -74,7 +75,7 @@ function generateBiweeklyIntervalsFromStart(startDate: Date, endDate: Date): { s
 export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
   const [periodOffset, setPeriodOffset] = useState(0);
   const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
-  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
+  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, IntervalSumData>>>({});
   const [editableProject, setEditableProject] = useState<Project>(project);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -137,53 +138,67 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 	}, [project?.id, filter.period, periodOffset]);
 
   useEffect(() => {
-  if (!project?.id || filter.period !== 'month') {
-    setIntervalSums({});
-    setServerIntervals([]);
-    return;
-  }
+	  if (!project?.id || filter.period !== 'month') {
+	    setIntervalSums({});
+	    setServerIntervals([]);
+	    return;
+	  }
 
-  async function loadIntervalSums() {
-    try {
-      const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
-      const sumsMap: Record<string, Record<string, number>> = {};
-      data.forEach(({ keyword_id, intervals }) => {
-        sumsMap[keyword_id] = {};
-        intervals.forEach(({ start_date, end_date, sum_cost }) => {
-          const label = `${start_date} - ${end_date}`;
-          sumsMap[keyword_id][label] = sum_cost;
-        });
-      });
-      setIntervalSums(sumsMap);
+	  async function loadIntervalSums() {
+	    try {
+	      const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+	      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
 
-      if (data.length > 0) {
-        const intervalsGroups = data[0].intervals.map(interval => {
-          const start = new Date(interval.display_start_date);
-          const end = new Date(interval.display_end_date);
-          const dates: Date[] = [];
-          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            dates.push(new Date(d));
-          }
-          return {
-            dates,
-            startDate: interval.start_date,
-            endDate: interval.end_date,
-            display_start_date: interval.display_start_date,
-            display_end_date: interval.display_end_date,
-          };
-        }).filter(group => group.dates.length > 0);
+	      data.forEach(({ keyword_id, intervals }) => {
+	        sumsMap[keyword_id] = {};
+	        intervals.forEach(interval => {
+	          const label = `${interval.start_date} - ${interval.end_date}`;
+	          sumsMap[keyword_id][label] = {
+	            daysTop3: interval.days_top3 ?? 0,
+	            costTop3: interval.cost_top3 ?? 0,
+	            daysTop5: interval.days_top5 ?? 0,
+	            costTop5: interval.cost_top5 ?? 0,
+	            daysTop10: interval.days_top10 ?? 0,
+	            costTop10: interval.cost_top10 ?? 0,
+	            sumCost: interval.sum_cost ?? 0,
+	          };
+	        });
+	      });
 
-        setServerIntervals(intervalsGroups);
-      } else {
-        setServerIntervals([]);
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки сумм по интервалам', error);
-      setServerIntervals([]);
-    }
-  }
-  loadIntervalSums();
-}, [project?.id, filter.period, periodOffset]);
+	      setIntervalSums(sumsMap);
+
+	      if (data.length > 0) {
+	        const intervalsGroups = data[0].intervals.map(interval => {
+	          const start = new Date(interval.display_start_date);
+	          const end = new Date(interval.display_end_date);
+	          const dates: Date[] = [];
+	          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	            dates.push(new Date(d));
+	          }
+	          return {
+	            dates,
+	            startDate: interval.start_date,
+	            endDate: interval.end_date,
+	            label: `${interval.start_date} - ${interval.end_date}`,
+	            displayLabel: `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`
+	          };
+	        }).filter(group => group.dates.length > 0);
+
+	        setServerIntervals(intervalsGroups);
+	      } else {
+	        setServerIntervals([]);
+	      }
+	    } catch (error) {
+	      console.error(error);
+	      setIntervalSums({});
+	      setServerIntervals([]);
+	    }
+	  }
+
+	  loadIntervalSums();
+	}, [project?.id, filter.period, periodOffset]);
+
+
 
 
 
@@ -235,29 +250,75 @@ export const ClientView: React.FC<ClientViewProps> = ({ project }) => {
 
 
   // Загрузка агрегированных сумм по интервалам
-  useEffect(() => {
-    if (!project?.id || filter.period !== 'month') {
-      setIntervalSums({});
-      return;
-    }
-    async function loadIntervalSums() {
-      try {
-        const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
-        const sumsMap: Record<string, Record<string, number>> = {};
-        data.forEach(({ keyword_id, intervals }) => {
-          sumsMap[keyword_id] = {};
-          intervals.forEach(({ start_date, end_date, sum_cost }) => {
-            const label = `${start_date} - ${end_date}`;
-            sumsMap[keyword_id][label] = sum_cost;
-          });
-        });
-        setIntervalSums(sumsMap);
-      } catch (error) {
-        console.error('Ошибка загрузки сумм по интервалам', error);
-      }
-    }
-    loadIntervalSums();
-  }, [project?.id, filter.period, periodOffset]);
+  async function loadIntervalSums() {
+	  if (!project?.id) return;
+
+	  try {
+	    const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+
+	    interface IntervalSumData {
+	      daysTop3: number;
+	      costTop3: number;
+	      daysTop5: number;
+	      costTop5: number;
+	      daysTop10: number;
+	      costTop10: number;
+	      sumCost: number;
+	    }
+
+	    const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
+
+	    data.forEach(({ keyword_id, intervals }) => {
+	      sumsMap[keyword_id] = {};
+	      intervals.forEach((interval) => {
+	        const label = `${interval.start_date} - ${interval.end_date}`;
+	        sumsMap[keyword_id][label] = {
+	          daysTop3: interval.days_top3 ?? 0,
+	          costTop3: interval.cost_top3 ?? 0,
+	          daysTop5: interval.days_top5 ?? 0,
+	          costTop5: interval.cost_top5 ?? 0,
+	          daysTop10: interval.days_top10 ?? 0,
+	          costTop10: interval.cost_top10 ?? 0,
+	          sumCost: interval.sum_cost ?? 0,
+	        };
+	      });
+	    });
+
+	    setIntervalSums(sumsMap);
+
+	    // Формируем массив интервалов с датами из первого ключевого слова (если оно есть)
+	    if (data.length > 0) {
+	      const intervalsGroups = data[0].intervals.map(interval => {
+	        const start = new Date(interval.display_start_date);
+	        const end = new Date(interval.display_end_date);
+	        const dates: Date[] = [];
+	        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	          dates.push(new Date(d));
+	        }
+	        return {
+	          dates,
+	          startDate: interval.start_date,
+	          endDate: interval.end_date,
+	          display_start_date: interval.display_start_date,
+	          display_end_date: interval.display_end_date,
+	          label: `${interval.start_date} - ${interval.end_date}`,  // Добавьте, если нужно использовать
+	          displayLabel: `${start.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})} - ${end.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})}`
+	        };
+	      }).filter(group => group.dates.length > 0);
+
+	      setServerIntervals(intervalsGroups);
+	    } else {
+	      setServerIntervals([]);
+	    }
+	  } catch (error) {
+	    console.error('Ошибка загрузки интервалов:', error);
+	    setServerIntervals([]);
+	  }
+	}
+
+	useEffect(() => {
+	  loadIntervalSums();
+	}, [project?.id, filter.period, periodOffset]);
 
   // Форматирование даты для ключа
   const formatDateKey = (date: Date) => {
@@ -362,17 +423,24 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
   // Помечаем последний интервал без проверки по дате
   const isLastPartial = isLast && isPartial;
 
-  return { ...group, isLastPartial };
-}).filter(group => {
-  if (!group.dates || group.dates.length === 0) return false;
+  // Формируем понятный label, например "15.07 - 28.07"
+  const label = `${group.startDate} - ${group.endDate}`; // ISO формат, ключ для intervalSums
+  const displayLabel = `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`;
 
-  if (group.isLastPartial) return true;
+  return { ...group,
+	  isLastPartial,
+	  label: `${group.startDate} - ${group.endDate}`,  // ISO-формат ключа!!!
+      displayLabel: `${new Date(group.startDate).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})} - ${new Date(group.endDate).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})}`, };
+	}).filter(group => {
+	  if (!group.dates || group.dates.length === 0) return false;
 
-  const start = new Date(group.startDate);
-  const end = new Date(group.endDate);
-  const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
-  return diffDays >= 14;
-});
+	  if (group.isLastPartial) return true;
+
+	  const start = new Date(group.startDate);
+	  const end = new Date(group.endDate);
+	  const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+	  return diffDays >= 14;
+	});
 
 
   return (
@@ -398,12 +466,12 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
           </div>
 
           {/* Статистика */}
-          <PositionStats
+          {/*<PositionStats
 	          top1to3={uniqueKeywordsTop1to3.size}
 	          top4to5={uniqueKeywordsTop4to5.size}
 	          top6to10={uniqueKeywordsTop6to10.size}
 	          totalKeywords={editableProject.keywords.length}
-	        />
+	        />*/}
 
 
           {/* Фильтр по периоду и ключевому слову */}
@@ -454,7 +522,7 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 
 
           {/* Таблица позиций */}
-          <PositionTableView
+          {/*<PositionTableView
           editableProject={editableProject}
           filteredKeywords={filteredKeywords}
           positionsMap={positionsMap}
@@ -464,7 +532,16 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
           filterPeriod={filter.period}
           intervalSums={intervalSums}
           formatDateKey={formatDateKey}
-        />
+        />*/}
+
+          {/* Таблица данных в виде Эксель */}
+          <ExcelLikeTableView
+			  domain={editableProject.domain}
+			  positions={positions}
+			  keywords={editableProject.keywords}
+			  intervalSums={intervalSums}
+			  dateGroups={extendedDateGroups}
+		  />
 
         </div>
       </div>
