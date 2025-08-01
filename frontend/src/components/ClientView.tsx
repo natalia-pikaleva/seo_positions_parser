@@ -483,7 +483,7 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
             >
               <option value="week">Неделя</option>
               <option value="month">Месяц</option>
-              <option value="custom">Произвольный период</option>
+              {/*<option value="custom">Произвольный период</option>*/}
             </select>
             <div className="flex flex-row gap-2 w-full sm:w-auto">
 			  <button
