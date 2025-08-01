@@ -53,12 +53,12 @@ def start_search(keyword, region, page=0):
         "query": {
             "searchType": "SEARCH_TYPE_RU",
             "queryText": keyword,
-            "regionId": region_id
+            "page": page
         },
         "folderId": FOLDER_ID,
         "responseFormat": "FORMAT_XML",
         "userAgent": "Mozilla/5.0",
-        "page": page  # Добавляем номер страницы
+        "region": region
     }
     logger.info(f"Отправляем запрос: {body}")
     resp = requests.post(url, json=body, headers=headers)
@@ -89,12 +89,14 @@ def parse_response(response, keyword="unknown"):
     try:
         raw_data_bytes = base64.b64decode(raw_data_b64)
 
+        logger.info(f"Текущий рабочий каталог для сохранения файла: {os.getcwd()}")
+
         # Сохраняем в файл для отладки
-        # timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        # filename = f"debug_yandex_search_{keyword}_{timestamp}.xml"
-        # with open(filename, "wb") as f:
-        #     f.write(raw_data_bytes)
-        # logger.info(f"Декодированный XML сохранён в файл: {filename}")
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"debug_yandex_search_{keyword}_{timestamp}.xml"
+        with open(filename, "wb") as f:
+            f.write(raw_data_bytes)
+        logger.info(f"Декодированный XML сохранён в файл: {filename}")
 
         xml_root = ET.fromstring(raw_data_bytes)
     except Exception as e:
