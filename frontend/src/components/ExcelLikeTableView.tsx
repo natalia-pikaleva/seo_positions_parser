@@ -109,18 +109,39 @@ function mergeDatesWithIntervals(
 const dataGridHeaderSx = {
   '& .column-header': {
     fontSize: '0.75rem',
-    backgroundColor: '#ea580c',  // оранжевый
-    color: '#fff',               // белый текст
+    backgroundColor: '#ea580c',
+    color: '#fff',
     fontWeight: 'bold',
+    whiteSpace: 'normal',          // разрешаем перенос
+    lineHeight: 1.2,
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    textAlign: 'center',
   },
-  // Новый стиль для заголовка итогового столбца
   '& .summary-column-header': {
     fontSize: '0.75rem',
-    backgroundColor: '#fffdd0', // кремово-жёлтый (пример)
-    color: '#000',              // черный текст
+    backgroundColor: '#fffdd0',
+    color: '#000',
     fontWeight: 'bold',
+    whiteSpace: 'normal',
+    lineHeight: 1.2,
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    textAlign: 'center',
+  },
+  // *** Важно: перекрываем стили заголовка для текста ***
+  '& .MuiDataGrid-columnHeaderTitle': {
+    whiteSpace: 'normal !important',
+    overflow: 'visible !important',
+    textOverflow: 'clip !important',
+    display: 'block',
+    lineHeight: 1.2,
+    // можно задать максимальную высоту для хранения нескольких строк
+    maxHeight: '3.6em', // примерно 3 строки при 1.2 line-height
   },
 };
+
+
 
 
 export function ExcelLikeTableView({
@@ -257,25 +278,24 @@ export function ExcelLikeTableView({
   function getColumnsForIntervalWithSummary(totalSum: number): GridColDef[] {
 	  return [
 	    { field: 'serial', headerName: '№', width: 80, headerClassName: 'column-header' },
-	    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
+	    { field: 'keyword', headerName: 'Ключевой запрос', width: 280, headerClassName: 'column-header' },
 	    { field: 'daysTop3', headerName: 'ТОП-3 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-	    { field: 'costTop3', headerName: 'Стоимость ТОП-3', width: 120, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop3', headerName: 'Стоимость ТОП-3', width: 100, type: 'number', headerClassName: 'column-header' },
 	    { field: 'daysTop5', headerName: 'ТОП-5 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-	    { field: 'costTop5', headerName: 'Стоимость ТОП-5', width: 120, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop5', headerName: 'Стоимость ТОП-5', width: 100, type: 'number', headerClassName: 'column-header' },
 	    { field: 'daysTop10', headerName: 'ТОП-10 кол-во', width: 100, type: 'number', headerClassName: 'column-header' },
-	    { field: 'costTop10', headerName: 'Стоимость ТОП-10', width: 130, type: 'number', headerClassName: 'column-header' },
+	    { field: 'costTop10', headerName: 'Стоимость ТОП-10', width: 100, type: 'number', headerClassName: 'column-header' },
 	    {
 	      field: 'totalCost',
 	      headerName: 'Итог по ключевому запросу',
-	      width: 180,
+	      width: 105,
 	      type: 'number',
 	      headerClassName: 'column-header',
-	      // renderCell не нужен, обычно это число в каждой строке
 	    },
 	    {
 	      field: 'totalSummary',
 	      headerName: `Итого за 2 недели: ${totalSum.toLocaleString('ru-RU')} руб.`,
-	      width: 200,
+	      width: 130,
 	      sortable: false,
 	      filterable: false,
 	      disableColumnMenu: true,
@@ -284,9 +304,6 @@ export function ExcelLikeTableView({
 	    },
 	  ];
 	}
-
-
-
 
   // Формирование строк для вкладок итогов по интервалам
   const getRowsByInterval = (intervalLabel: string) => {
