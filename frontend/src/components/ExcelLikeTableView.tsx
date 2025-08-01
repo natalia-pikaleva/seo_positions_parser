@@ -108,13 +108,19 @@ function mergeDatesWithIntervals(
 
 const dataGridHeaderSx = {
   '& .column-header': {
-    fontSize: '0.75rem',          // маленький шрифт (~12px)
-    backgroundColor: '#ea580c',
-    color: '#fff',                // белый цвет текста для контраста
+    fontSize: '0.75rem',
+    backgroundColor: '#ea580c',  // оранжевый
+    color: '#fff',               // белый текст
+    fontWeight: 'bold',
+  },
+  // Новый стиль для заголовка итогового столбца
+  '& .summary-column-header': {
+    fontSize: '0.75rem',
+    backgroundColor: '#fffdd0', // кремово-жёлтый (пример)
+    color: '#000',              // черный текст
     fontWeight: 'bold',
   },
 };
-
 
 
 export function ExcelLikeTableView({
@@ -242,7 +248,7 @@ export function ExcelLikeTableView({
         sortable: false,
         filterable: false,
         disableColumnMenu: true,
-        headerClassName: 'column-header'
+        headerClassName: 'summary-column-header'
       },
     ];
   }
@@ -273,7 +279,7 @@ export function ExcelLikeTableView({
 	      sortable: false,
 	      filterable: false,
 	      disableColumnMenu: true,
-	      headerClassName: 'column-header',
+	      headerClassName: 'summary-column-header',
 	      renderCell: () => null, // Чтобы ячейки пустые были
 	    },
 	  ];
