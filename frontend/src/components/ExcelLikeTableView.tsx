@@ -176,9 +176,9 @@ export function ExcelLikeTableView({
 	  { field: 'serial', headerName: 'Номер п/п', width: 110, headerClassName: 'column-header' },
 	  { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
 	  { field: 'region', headerName: 'Регион', width: 150, headerClassName: 'column-header' },
-	  { field: 'cost_top3', headerName: 'Стоимость ТОП3, руб', width: 200, type: 'number', headerClassName: 'column-header' },
-	  { field: 'cost_top5', headerName: 'Стоимость ТОП5, руб', width: 200, type: 'number', headerClassName: 'column-header' },
-	  { field: 'cost_top10', headerName: 'Стоимость ТОП10, руб', width: 200, type: 'number', headerClassName: 'column-header' },
+	  { field: 'cost_top3', headerName: 'Стоимость ТОП3, руб', width: 150, type: 'number', headerClassName: 'column-header' },
+	  { field: 'cost_top5', headerName: 'Стоимость ТОП5, руб', width: 150, type: 'number', headerClassName: 'column-header' },
+	  { field: 'cost_top10', headerName: 'Стоимость ТОП10, руб', width: 150, type: 'number', headerClassName: 'column-header' },
 	];
 
   // Уникальные даты из позиций в формате ISO (YYYY-MM-DD)
