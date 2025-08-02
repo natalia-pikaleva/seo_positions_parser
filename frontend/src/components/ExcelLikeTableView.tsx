@@ -464,6 +464,16 @@ export function ExcelLikeTableView({
 	  );
 	}*/}
 
+  // Функция для склонения
+  function declOfNum(number, titles) {
+	  // number - число
+	  // titles - массив форм ['день', 'дня', 'дней']
+	  const cases = [2, 0, 1, 1, 1, 2];
+	  return titles[(number % 100 > 4 && number % 100 < 20)
+	    ? 2
+	    : cases[(number % 10 < 5) ? number % 10 : 5]];
+	}
+
   // Вариант карточек с итогами за период в формате аккордеона
   function IntervalAccordion({ row }) {
 	  const [open, setOpen] = useState(false);
@@ -484,54 +494,53 @@ export function ExcelLikeTableView({
 	      }}
 	    >
 	      <div
-					  onClick={() => setOpen(!open)}
-					  style={{
-					    padding: '12px 16px',
-					    cursor: 'pointer',
-					    display: 'flex',
-					    alignItems: 'center',
-					    flexWrap: 'wrap', // разрешаем перенос при нехватке места
-					    userSelect: 'none',
-					  }}
-					>
-					  <div
-					    style={{
-					      fontWeight: 'bold',
-					      whiteSpace: 'normal', // разрешаем перенос текста
-					      flex: 1,               // занимает всё доступное место
-					      minWidth: 0,           // позволяет сжиматься в flex
-					    }}
-					  >
-					    {`${row.serial}. ${row.keyword}`}
-					  </div>
+				  onClick={() => setOpen(!open)}
+				  style={{
+				    padding: '12px 16px',
+				    cursor: 'pointer',
+				    display: 'flex',
+				    alignItems: 'center',
+				    flexWrap: 'wrap', // разрешаем перенос при нехватке места
+				    userSelect: 'none',
+				  }}
+				>
+				  <div
+				    style={{
+				      fontWeight: 'bold',
+				      whiteSpace: 'normal', // разрешаем перенос текста
+				      flex: 1,               // занимает всё доступное место
+				      minWidth: 0,           // позволяет сжиматься в flex
+				    }}
+				  >
+				    {`${row.serial}. ${row.keyword}`}
+				  </div>
 
-					  <div
-					    style={{
-					      display: 'flex',
-					      alignItems: 'center',
-					      marginLeft: 'auto',    // сдвигает блок с суммой и стрелкой вправо
-					      whiteSpace: 'nowrap',  // сумма и стрелка не переносятся, а лежат в ряд
-					    }}
-					  >
-					    <span style={{ color: '#555', fontWeight: 'bold', marginRight: 12 }}>
-					      {row.totalCost.toLocaleString('ru-RU')} руб.
-					    </span>
-					    <span>{open ? '▲' : '▼'}</span>
-					  </div>
-					</div>
-
+				  <div
+				    style={{
+				      display: 'flex',
+				      alignItems: 'center',
+				      marginLeft: 'auto',    // сдвигает блок с суммой и стрелкой вправо
+				      whiteSpace: 'nowrap',  // сумма и стрелка не переносятся, а лежат в ряд
+				    }}
+				  >
+				    <span style={{ color: '#555', fontWeight: 'bold', marginRight: 12 }}>
+				      {row.totalCost.toLocaleString('ru-RU')} руб.
+				    </span>
+				    <span>{open ? '▲' : '▼'}</span>
+				  </div>
+				</div>
 
 	      {open && (
 	        <div style={{ padding: 12, borderTop: '1px solid #ddd' }}>
 	          <div style={{ color: colorTop3, marginBottom: 6 }}>
-	            ТОП-3: {row.daysTop3} дней, стоимость {row.costTop3} руб.
-	          </div>
-	          <div style={{ color: colorTop5, marginBottom: 6 }}>
-	            ТОП-5: {row.daysTop5} дней, стоимость {row.costTop5} руб.
-	          </div>
-	          <div style={{ color: colorTop10, marginBottom: 6 }}>
-	            ТОП-10: {row.daysTop10} дней, стоимость {row.costTop10} руб.
-	          </div>
+				  ТОП-3: {row.daysTop3} {declOfNum(row.daysTop3, ['день', 'дня', 'дней'])}, стоимость {row.costTop3} руб.
+		      </div>
+			  <div style={{ color: colorTop5, marginBottom: 6 }}>
+				  ТОП-5: {row.daysTop5} {declOfNum(row.daysTop5, ['день', 'дня', 'дней'])}, стоимость {row.costTop5} руб.
+			  </div>
+			  <div style={{ color: colorTop10, marginBottom: 6 }}>
+				  ТОП-10: {row.daysTop10} {declOfNum(row.daysTop10, ['день', 'дня', 'дней'])}, стоимость {row.costTop10} руб.
+			  </div>
 	        </div>
 	      )}
 	    </div>
