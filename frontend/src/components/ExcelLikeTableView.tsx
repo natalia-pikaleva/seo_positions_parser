@@ -484,24 +484,43 @@ export function ExcelLikeTableView({
 	      }}
 	    >
 	      <div
-	        onClick={() => setOpen(!open)}
-	        style={{
-	          padding: '12px 16px',
-	          cursor: 'pointer',
-	          display: 'flex',
-	          justifyContent: 'space-between',
-	          alignItems: 'center',
-	          userSelect: 'none',
-	        }}
-	      >
-	        <span style={{ fontWeight: 'bold', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-	          {`${row.serial}. ${row.keyword}`}
-	        </span>
-	        <span style={{ marginLeft: 8, color: '#555', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-	          {row.totalCost.toLocaleString('ru-RU')} руб.
-	        </span>
-	        <span style={{ marginLeft: 12 }}>{open ? '▲' : '▼'}</span>
-	      </div>
+					  onClick={() => setOpen(!open)}
+					  style={{
+					    padding: '12px 16px',
+					    cursor: 'pointer',
+					    display: 'flex',
+					    alignItems: 'center',
+					    flexWrap: 'wrap', // разрешаем перенос при нехватке места
+					    userSelect: 'none',
+					  }}
+					>
+					  <div
+					    style={{
+					      fontWeight: 'bold',
+					      whiteSpace: 'normal', // разрешаем перенос текста
+					      flex: 1,               // занимает всё доступное место
+					      minWidth: 0,           // позволяет сжиматься в flex
+					    }}
+					  >
+					    {`${row.serial}. ${row.keyword}`}
+					  </div>
+
+					  <div
+					    style={{
+					      display: 'flex',
+					      alignItems: 'center',
+					      marginLeft: 'auto',    // сдвигает блок с суммой и стрелкой вправо
+					      whiteSpace: 'nowrap',  // сумма и стрелка не переносятся, а лежат в ряд
+					    }}
+					  >
+					    <span style={{ color: '#555', fontWeight: 'bold', marginRight: 12 }}>
+					      {row.totalCost.toLocaleString('ru-RU')} руб.
+					    </span>
+					    <span>{open ? '▲' : '▼'}</span>
+					  </div>
+					</div>
+
+
 	      {open && (
 	        <div style={{ padding: 12, borderTop: '1px solid #ddd' }}>
 	          <div style={{ color: colorTop3, marginBottom: 6 }}>
