@@ -8,6 +8,6 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
-    allowedHosts: ['wishflick.ru', 'www.wishflick.ru']
+    allowedHosts: ['parser.re-spond.com', 'www.parser.re-spond.com']
   }
 });

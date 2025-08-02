@@ -15,6 +15,9 @@ app = FastAPI(title="SEO Position parser")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://31.207.75.202:5173",
+    "https://parser.re-spond.com",
+    "http://parser.re-spond.com"
 ]
 
 app.add_middleware(
