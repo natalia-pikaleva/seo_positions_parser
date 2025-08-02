@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 import 'react-tabs/style/react-tabs.css';
 
@@ -151,6 +152,8 @@ export function ExcelLikeTableView({
   intervalSums,
   dateGroups,
 }: ExcelLikeTableViewProps): JSX.Element {
+  const isMobile = useMediaQuery('(max-width:600px)');
+
   // Формируем строки для вкладки "Инфо"
   const infoRows = useMemo(() => {
     return keywords.map((k, index) => ({
@@ -181,6 +184,32 @@ export function ExcelLikeTableView({
 	  { field: 'cost_top10', headerName: 'Стоимость ТОП10, руб', width: 150, type: 'number', headerClassName: 'column-header' },
 	];
 
+  // Вертикальные карточки для вкладки "Инфо" для мобильной версии
+  const renderInfoCards = () => (
+    <div style={{ padding: 8 }}>
+      {infoRows.map(row => (
+        <div
+          key={row.id}
+          style={{
+            border: '1px solid #ccc',
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+            background: '#fff',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          <div><strong>№:</strong> {row.serial}</div>
+          <div><strong>Ключевой запрос:</strong> {row.keyword}</div>
+          <div><strong>Регион:</strong> {row.region}</div>
+          <div><strong>Стоимость ТОП3:</strong> {row.cost_top3}</div>
+          <div><strong>Стоимость ТОП5:</strong> {row.cost_top5}</div>
+          <div><strong>Стоимость ТОП10:</strong> {row.cost_top10}</div>
+        </div>
+      ))}
+    </div>
+  );
+
   // Уникальные даты из позиций в формате ISO (YYYY-MM-DD)
   const uniqueDates = useMemo(() => {
     const set = new Set<string>();
@@ -208,7 +237,7 @@ export function ExcelLikeTableView({
 
   function getColumnsForDate(dateStr: string): GridColDef[] {
     return [
-      { field: 'keyword', headerName: 'Ключевое слово', width: 250, headerClassName: 'column-header' },
+      { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
       {
         field: 'position',
         headerName: `Позиция ${formatDateShort(dateStr)}`,
@@ -246,7 +275,7 @@ export function ExcelLikeTableView({
   // Колонки для вкладок с итогами за день
   function getColumnsForDateWithTotal(dateStr: string, totalCost: number): GridColDef[] {
     return [
-      { field: 'keyword', headerName: 'Ключевое слово', width: 250, headerClassName: 'column-header' },
+      { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
       {
         field: 'position',
         headerName: `Позиция ${formatDateShort(dateStr)}`,
@@ -273,6 +302,52 @@ export function ExcelLikeTableView({
       },
     ];
   }
+
+  // Вертикальные карточки для таба с конкретной датой
+  function renderDateCards(dateStr: string) {
+	  const totalCost = getTotalCostForDate(dateStr);
+
+	  return (
+	    <div style={{ padding: 8 }}>
+	      <div style={{
+	          fontWeight: 'bold',
+	          fontSize: '1.1rem',
+	          padding: '8px 12px',
+	          marginBottom: 12,
+	          backgroundColor: '#fffdd0',
+	          borderRadius: 8,
+	          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+	          textAlign: 'center'
+	        }}
+	      >
+	        Итог за {formatDateShort(dateStr)}: {totalCost.toLocaleString('ru-RU')} руб.
+	      </div>
+
+	      {keywords.map(k => {
+	        const key = `${k.id}|${dateStr}`;
+	        const pos = positions.find(p => p.keyword_id === k.id && formatDate(p.checked_at) === dateStr);
+
+	        return (
+	          <div
+	            key={k.id}
+	            style={{
+	              border: '1px solid #ccc',
+	              borderRadius: 8,
+	              padding: 12,
+	              marginBottom: 12,
+	              background: '#fff',
+	              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+	            }}
+	          >
+	            <div><strong>Ключевой запрос: {k.keyword} </strong></div>
+	            <div>Позиция: {pos?.position ?? '-'}</div>
+	            <div>Стоимость: {pos?.cost ?? '-'}</div>
+	          </div>
+	        );
+	      })}
+	    </div>
+	  );
+	}
 
   // Колонки для вкладок с итогами за 14-дневные периоды
   function getColumnsForIntervalWithSummary(totalSum: number): GridColDef[] {
@@ -341,6 +416,138 @@ export function ExcelLikeTableView({
 
   const [selectedTab, setSelectedTab] = useState(0);
 
+  // Отрисовка карточек для интервалов - просто список данных
+  {/*function renderIntervalCards(intervalLabel: string) {
+	  const rows = getRowsByInterval(intervalLabel);
+	  const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
+
+	  return (
+	    <div style={{ padding: 8 }}>
+	      <div style={{
+	          fontWeight: 'bold',
+	          fontSize: '1.1rem',
+	          padding: '8px 12px',
+	          marginBottom: 12,
+	          backgroundColor: '#fffdd0',
+	          borderRadius: 8,
+	          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+	          textAlign: 'center'
+	        }}
+	      >
+	        Итого за 2 недели: {totalSumForInterval.toLocaleString('ru-RU')} руб.
+	      </div>
+
+	      {rows.map(row => (
+	        <div
+	          key={row.id}
+	          style={{
+	            border: '1px solid #ccc',
+	            borderRadius: 8,
+	            padding: 12,
+	            marginBottom: 12,
+	            background: '#fff',
+	            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+	          }}
+	        >
+	          <div><strong>№:</strong> {row.serial}</div>
+	          <div><strong>Ключевой запрос:</strong> {row.keyword}</div>
+	          <div><strong>ТОП-3 кол-во:</strong> {row.daysTop3}</div>
+	          <div><strong>Стоимость ТОП-3:</strong> {row.costTop3}</div>
+	          <div><strong>ТОП-5 кол-во:</strong> {row.daysTop5}</div>
+	          <div><strong>Стоимость ТОП-5:</strong> {row.costTop5}</div>
+	          <div><strong>ТОП-10 кол-во:</strong> {row.daysTop10}</div>
+	          <div><strong>Стоимость ТОП-10:</strong> {row.costTop10}</div>
+	          <div><strong>Итог по ключу:</strong> {row.totalCost}</div>
+	        </div>
+	      ))}
+	    </div>
+	  );
+	}*/}
+
+  // Вариант карточек с итогами за период в формате аккордеона
+  function IntervalAccordion({ row }) {
+	  const [open, setOpen] = useState(false);
+
+	  const colorTop3 = '#16a34a'; // зеленый
+	  const colorTop5 = '#ea580c'; // оранжевый
+	  const colorTop10 = '#dc2626'; // красный
+
+	  return (
+	    <div
+	      style={{
+	        border: '1px solid #ccc',
+	        borderRadius: 8,
+	        marginBottom: 10,
+	        background: '#fff',
+	        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+	        overflow: 'hidden',
+	      }}
+	    >
+	      <div
+	        onClick={() => setOpen(!open)}
+	        style={{
+	          padding: '12px 16px',
+	          cursor: 'pointer',
+	          display: 'flex',
+	          justifyContent: 'space-between',
+	          alignItems: 'center',
+	          userSelect: 'none',
+	        }}
+	      >
+	        <span style={{ fontWeight: 'bold', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+	          {`${row.serial}. ${row.keyword}`}
+	        </span>
+	        <span style={{ marginLeft: 8, color: '#555', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+	          {row.totalCost.toLocaleString('ru-RU')} руб.
+	        </span>
+	        <span style={{ marginLeft: 12 }}>{open ? '▲' : '▼'}</span>
+	      </div>
+	      {open && (
+	        <div style={{ padding: 12, borderTop: '1px solid #ddd' }}>
+	          <div style={{ color: colorTop3, marginBottom: 6 }}>
+	            ТОП-3: {row.daysTop3} дней, стоимость {row.costTop3} руб.
+	          </div>
+	          <div style={{ color: colorTop5, marginBottom: 6 }}>
+	            ТОП-5: {row.daysTop5} дней, стоимость {row.costTop5} руб.
+	          </div>
+	          <div style={{ color: colorTop10, marginBottom: 6 }}>
+	            ТОП-10: {row.daysTop10} дней, стоимость {row.costTop10} руб.
+	          </div>
+	        </div>
+	      )}
+	    </div>
+	  );
+	}
+
+
+  function renderIntervalCards(intervalLabel: string) {
+	  const rows = getRowsByInterval(intervalLabel);
+	  const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
+
+	  return (
+	    <div>
+	      {/* итого */}
+	      <div style={{
+	          fontWeight: 'bold',
+	          fontSize: '1.1rem',
+	          padding: '8px 12px',
+	          marginBottom: 12,
+	          backgroundColor: '#fffdd0',
+	          borderRadius: 8,
+	          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+	          textAlign: 'center'
+	        }}
+	      >
+	        Итого за 2 недели: {totalSumForInterval.toLocaleString('ru-RU')} руб.
+	      </div>
+	      {rows.map(row => (
+	        <IntervalAccordion key={row.id} row={row} />
+	      ))}
+	    </div>
+	  );
+	}
+
+
   return (
 	  <Tabs selectedIndex={selectedTab} onSelect={setSelectedTab}>
 	    {/* Обертка для горизонтального скролла и рендеринга вкладок в ряд */}
@@ -404,7 +611,7 @@ export function ExcelLikeTableView({
 	    </div>
 
 	    {/* Панель "Инфо" */}
-	   <TabPanel key="panel-info">
+	    <TabPanel key="panel-info">
 		  {/* Отступ сверху и снизу, увеличенный размер шрифта и жирность */}
 		  <div style={{ marginTop: 16, marginBottom: 20 }}>
 		    <strong style={{ fontSize: '1.5rem', display: 'inline-block' }}>
@@ -412,64 +619,72 @@ export function ExcelLikeTableView({
 		    </strong>
 		  </div>
 
-		  {/* Отступ сверху перед таблицей, если нужно */}
-		  <div style={{ marginTop: 0, height: 420, width: '100%' }}>
-		    <DataGrid
-		      rows={infoRows}
-		      columns={infoColumns}
-		      pageSize={10}
-		      rowsPerPageOptions={[10]}
-		      disableSelectionOnClick
-		      autoHeight
-		      sx={dataGridHeaderSx}
-		    />
-		  </div>
+		  {isMobile ? (
+	          renderInfoCards()
+	        ) : (
+	          <div style={{ marginTop: 0, height: 420, width: '100%' }}>
+	            <DataGrid
+	              rows={infoRows}
+	              columns={infoColumns}
+	              pageSize={10}
+	              rowsPerPageOptions={[10]}
+	              disableSelectionOnClick
+	              autoHeight
+	              sx={dataGridHeaderSx}
+	            />
+	          </div>
+	        )}
 		</TabPanel>
 
 
 	    {/* Панели для вкладок с датами и итогами */}
 	    {mergedTabs.map((tab, idx) => {
-	      console.log(`Rendering TabPanel #${idx}`, tab.type, tab.value, tab.interval);
+	        if (tab.type === 'date') {
+	          const totalCost = getTotalCostForDate(tab.value);
+	          return (
+	            <TabPanel key={`date-panel-${tab.value}`}>
+	              {isMobile ? (
+	                renderDateCards(tab.value)
+	              ) : (
+	                <DataGrid
+	                  rows={getRowsForDate(tab.value)}
+	                  columns={getColumnsForDateWithTotal(tab.value, totalCost)}
+	                  pageSize={20}
+	                  rowsPerPageOptions={[10, 20, 50]}
+	                  disableSelectionOnClick
+	                  autoHeight
+	                  sx={dataGridHeaderSx}
+	                />
+	              )}
+	            </TabPanel>
+	          );
+	        } else {
+	          if (!tab.interval) return null;
 
-	      if (tab.type === 'date') {
-	        const totalCost = getTotalCostForDate(tab.value);
-	        return (
-	          <TabPanel key={`date-panel-${tab.value}`}>
-	            <DataGrid
-	              rows={getRowsForDate(tab.value)}
-	              columns={getColumnsForDateWithTotal(tab.value, totalCost)}
-	              pageSize={20}
-	              rowsPerPageOptions={[10, 20, 50]}
-	              disableSelectionOnClick
-	              autoHeight
-	              sx={dataGridHeaderSx}
-	            />
-	          </TabPanel>
-	        );
-	      } else {
-	        if (!tab.interval) {
-	          return null;
+	          const intervalKey = tab.interval.label;
+	          const rows = getRowsByInterval(intervalKey);
+	          const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
+
+	          return (
+	            <TabPanel key={`interval-panel-${intervalKey}`}>
+	              {isMobile ? (
+	                renderIntervalCards(intervalKey)
+	              ) : (
+	                <DataGrid
+	                  rows={rows}
+	                  columns={getColumnsForIntervalWithSummary(totalSumForInterval)}
+	                  pageSize={10}
+	                  rowsPerPageOptions={[10, 20, 50]}
+	                  disableSelectionOnClick
+	                  autoHeight
+	                  sx={dataGridHeaderSx}
+	                />
+	              )}
+	            </TabPanel>
+	          );
 	        }
-	        const intervalKey = tab.interval.label;
-			const rows = getRowsByInterval(intervalKey);
-			const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
-
-			return (
-			  <TabPanel key={`interval-panel-${intervalKey}`}>
-			    <DataGrid
-			      rows={rows}
-			      columns={getColumnsForIntervalWithSummary(totalSumForInterval)}
-			      pageSize={10}
-			      rowsPerPageOptions={[10, 20, 50]}
-			      disableSelectionOnClick
-			      autoHeight
-			      sx={dataGridHeaderSx}
-			    />
-			  </TabPanel>
-	        );
-	      }
-	    })}
-	  </Tabs>
+	      })}
+	    </Tabs>
 	);
 
 }
