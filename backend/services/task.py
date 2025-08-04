@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 from services.celery_app import celery_app
 import os
+import random
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -32,7 +33,7 @@ SessionLocal = sessionmaker(bind=engine)
 API_KEY = os.getenv("API_KEY")
 FOLDER_ID = os.getenv("FOLDER_ID")
 
-RATE_LIMIT = 10  # max 10 запросов в секунду
+RATE_LIMIT = 8  # max 8 запросов в секунду
 
 semaphore = asyncio.Semaphore(RATE_LIMIT)
 
@@ -44,8 +45,13 @@ async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: d
             async with semaphore:
                 async with session.post(url, json=json_data, headers=headers) as resp:
                     if resp.status == 429:
-                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}")
-                        await asyncio.sleep(backoff * (attempt + 1))
+                        retry_after = resp.headers.get("Retry-After")
+                        wait_time = int(retry_after) if retry_after and retry_after.isdigit() else backoff * (
+                                    attempt + 1)
+                        wait_time += random.uniform(0, 1)
+                        logger.warning(
+                            f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}, ждем {wait_time:.2f} сек")
+                        await asyncio.sleep(wait_time)
                         continue
                     resp.raise_for_status()
                     return await resp.json()
@@ -64,8 +70,11 @@ async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict
             async with semaphore:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status == 429:
-                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}")
-                        await asyncio.sleep(backoff * (attempt + 1))
+                        retry_after = resp.headers.get("Retry-After")
+                        wait_time = int(retry_after) if retry_after and retry_after.isdigit() else backoff * (attempt + 1)
+                        wait_time += random.uniform(0, 1)
+                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt+1} из {retries}, ждем {wait_time:.2f} сек")
+                        await asyncio.sleep(wait_time)
                         continue
                     resp.raise_for_status()
                     return await resp.json()
@@ -76,6 +85,7 @@ async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict
         except Exception as e:
             logger.error(f"Неизвестная ошибка GET запроса к {url}: {e}")
     return None
+
 
 
 def region_to_lr_code(region: str) -> int:
