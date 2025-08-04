@@ -34,37 +34,47 @@ FOLDER_ID = os.getenv("FOLDER_ID")
 
 RATE_LIMIT = 10  # max 10 запросов в секунду
 
-post_semaphore = asyncio.Semaphore(RATE_LIMIT)
-get_semaphore = asyncio.Semaphore(RATE_LIMIT)
+semaphore = asyncio.Semaphore(RATE_LIMIT)
 
 
-async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: dict, headers: dict):
-    try:
-        async with post_semaphore:
-            async with session.post(url, json=json_data, headers=headers) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-    except aiohttp.ClientError as e:
-        logger.error(f"HTTP POST ошибка на {url}: {e}")
-    except asyncio.TimeoutError as e:
-        logger.error(f"Таймаут POST запроса к {url}: {e}")
-    except Exception as e:
-        logger.error(f"Неизвестная ошибка POST запроса к {url}: {e}")
+async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: dict, headers: dict, retries=3,
+                          backoff=5):
+    for attempt in range(retries):
+        try:
+            async with semaphore:
+                async with session.post(url, json=json_data, headers=headers) as resp:
+                    if resp.status == 429:
+                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}")
+                        await asyncio.sleep(backoff * (attempt + 1))
+                        continue
+                    resp.raise_for_status()
+                    return await resp.json()
+        except aiohttp.ClientError as e:
+            logger.error(f"HTTP POST ошибка на {url}: {e}")
+        except asyncio.TimeoutError as e:
+            logger.error(f"Таймаут POST запроса к {url}: {e}")
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка POST запроса к {url}: {e}")
     return None
 
 
-async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict):
-    try:
-        async with get_semaphore:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-    except aiohttp.ClientError as e:
-        logger.error(f"HTTP GET ошибка на {url}: {e}")
-    except asyncio.TimeoutError as e:
-        logger.error(f"Таймаут GET запроса к {url}: {e}")
-    except Exception as e:
-        logger.error(f"Неизвестная ошибка GET запроса к {url}: {e}")
+async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict, retries=3, backoff=5):
+    for attempt in range(retries):
+        try:
+            async with semaphore:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 429:
+                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}")
+                        await asyncio.sleep(backoff * (attempt + 1))
+                        continue
+                    resp.raise_for_status()
+                    return await resp.json()
+        except aiohttp.ClientError as e:
+            logger.error(f"HTTP GET ошибка на {url}: {e}")
+        except asyncio.TimeoutError as e:
+            logger.error(f"Таймаут GET запроса к {url}: {e}")
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка GET запроса к {url}: {e}")
     return None
 
 
