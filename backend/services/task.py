@@ -33,24 +33,21 @@ SessionLocal = sessionmaker(bind=engine)
 API_KEY = os.getenv("API_KEY")
 FOLDER_ID = os.getenv("FOLDER_ID")
 
-RATE_LIMIT = 8  # max 8 запросов в секунду
-
-semaphore = asyncio.Semaphore(RATE_LIMIT)
+RATE_LIMIT = 4  # max 4 запроса в секунду
 
 
-async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: dict, headers: dict, retries=3,
-                          backoff=5):
+
+async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: dict, headers: dict,
+                          semaphore: asyncio.Semaphore, retries=3, backoff=5):
     for attempt in range(retries):
         try:
             async with semaphore:
                 async with session.post(url, json=json_data, headers=headers) as resp:
                     if resp.status == 429:
                         retry_after = resp.headers.get("Retry-After")
-                        wait_time = int(retry_after) if retry_after and retry_after.isdigit() else backoff * (
-                                    attempt + 1)
+                        wait_time = int(retry_after) if retry_after and retry_after.isdigit() else backoff * (attempt + 1)
                         wait_time += random.uniform(0, 1)
-                        logger.warning(
-                            f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}, ждем {wait_time:.2f} сек")
+                        logger.warning(f"429 Too Many Requests на {url}, попытка {attempt + 1} из {retries}, ждем {wait_time:.2f} сек")
                         await asyncio.sleep(wait_time)
                         continue
                     resp.raise_for_status()
@@ -64,7 +61,8 @@ async def async_post_json(session: aiohttp.ClientSession, url: str, json_data: d
     return None
 
 
-async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict, retries=3, backoff=5):
+async def async_get_json(session: aiohttp.ClientSession, url: str, headers: dict,
+                         semaphore: asyncio.Semaphore, retries=3, backoff=5):
     for attempt in range(retries):
         try:
             async with semaphore:
@@ -98,7 +96,8 @@ def region_to_lr_code(region: str) -> int:
     return mapping.get(region, 213)  # по умолчанию Москва
 
 
-async def start_search_async(session: aiohttp.ClientSession, keyword: str, region: str, page=0) -> str:
+async def start_search_async(session: aiohttp.ClientSession, keyword: str, region: str,
+                             semaphore: asyncio.Semaphore, page=0) -> str:
     url = "https://searchapi.api.cloud.yandex.net/v2/web/searchAsync"
     headers = {
         "Authorization": f"Api-Key {API_KEY}",
@@ -117,7 +116,7 @@ async def start_search_async(session: aiohttp.ClientSession, keyword: str, regio
     }
     logger.info(f"Отправляем запрос: {body}")
     try:
-        resp_json = await async_post_json(session, url, body, headers)
+        resp_json = await async_post_json(session, url, body, headers, semaphore)
         if not resp_json or "id" not in resp_json:
             logger.error(f"Ответ API не содержит 'id': {resp_json}")
             return None
@@ -127,13 +126,14 @@ async def start_search_async(session: aiohttp.ClientSession, keyword: str, regio
         return None
 
 
-async def get_result_async(session: aiohttp.ClientSession, operation_id: str, timeout=120, interval=5):
+async def get_result_async(session: aiohttp.ClientSession, operation_id: str,
+                           semaphore: asyncio.Semaphore, timeout=120, interval=5):
     url = f"https://operation.api.cloud.yandex.net/operations/{operation_id}"
     headers = {"Authorization": f"Api-Key {API_KEY}"}
 
     waited = 0
     while waited < timeout:
-        data = await async_get_json(session, url, headers)
+        data = await async_get_json(session, url, headers, semaphore)
         if not data:
             logger.warning(f"Пустой или некорректный ответ при получении результата операции {operation_id}")
             await asyncio.sleep(interval)
@@ -171,24 +171,23 @@ def parse_response(response):
 
 
 async def find_position_async(session_http: aiohttp.ClientSession, domain: str, keyword: str, region: str,
-                              max_pages=10):
+                              semaphore: asyncio.Semaphore, max_pages=10):
     domain = domain.lower()
     for page in range(max_pages):
         try:
-            operation_id = await start_search_async(session_http, keyword, region, page=page)
+            operation_id = await start_search_async(session_http, keyword, region, semaphore, page=page)
             if not operation_id:
                 logger.warning(f"Не удалось получить operation_id для ключевого слова '{keyword}', страница {page}")
                 continue
             logger.info(f"Запрос отправлен, operation_id: {operation_id}, страница: {page}")
-            response = await get_result_async(session_http, operation_id)
+            response = await get_result_async(session_http, operation_id, semaphore)
             if not response:
                 logger.warning(f"Пустой ответ от API для ключевого слова '{keyword}' на странице {page}")
                 continue
 
             urls = parse_response(response)
             if not urls:
-                logger.warning(
-                    f"Не удалось получить результаты поиска для ключевого слова '{keyword}' на странице {page}")
+                logger.warning(f"Не удалось получить результаты поиска для ключевого слова '{keyword}' на странице {page}")
                 continue
 
             for idx, url in enumerate(urls, start=1 + page * 10):
@@ -202,10 +201,11 @@ async def find_position_async(session_http: aiohttp.ClientSession, domain: str, 
     return None
 
 
-async def parse_and_save_position_async(session_db, session_http, project: Project, keyword: Keyword) -> bool:
+async def parse_and_save_position_async(session_db, session_http, project: Project, keyword: Keyword,
+                                        semaphore: asyncio.Semaphore) -> bool:
     try:
         position = await find_position_async(session_http, domain=project.domain, keyword=keyword.keyword,
-                                             region=keyword.region)
+                                             region=keyword.region, semaphore=semaphore)
         if position is None:
             logger.warning(
                 f"Не удалось получить позицию для ключевого слова '{keyword.keyword}' в проекте {project.id}")
@@ -258,18 +258,16 @@ async def parse_and_save_position_async(session_db, session_http, project: Proje
         return False
 
 
-async def process_single_project_async(session_db, session_http, project: Project) -> List[Tuple[UUID, UUID]]:
-    """
-    Асинхронная обработка одного проекта:
-    - параллельно обрабатывает все ключевые слова с is_check=True,
-    - возвращает список (project.id, keyword.id) ключевых слов, для которых произошла ошибка или парсинг не прошёл.
-    """
+async def process_single_project_async(session_db, session_http,
+                                       project: Project, semaphore: asyncio.Semaphore) -> List[Tuple[UUID, UUID]]:
+
     failed_keywords_local = []
     tasks = []
     keywords_checked = [kw for kw in project.keywords if kw.is_check]
 
     for keyword in keywords_checked:
-        tasks.append(parse_and_save_position_async(session_db, session_http, project, keyword))
+        tasks.append(parse_and_save_position_async(session_db, session_http, project, keyword, semaphore))
+
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -303,15 +301,16 @@ def parse_positions_task():
         session.close()
 
     async def main():
+        semaphore = asyncio.Semaphore(RATE_LIMIT)
         try:
             async with aiohttp.ClientSession() as session_http:
                 for project in projects:
                     session_db = SessionLocal()
                     try:
-                        failed_local = await process_single_project_async(session_db, session_http, project)
+                        failed_local = await process_single_project_async(session_db, session_http, project, semaphore)
                         failed_keywords.extend(failed_local)
                     except Exception as e:
-                        logger.error(f"Ошибка при асинхронном парсинге проекта {project.id}: {e}")
+                        logger.error(f"Ошибка при асинхроprocess_single_project_asyncнном парсинге проекта {project.id}: {e}")
                     finally:
                         session_db.close()
                     await asyncio.sleep(1)  # пауза между проектами
@@ -328,7 +327,7 @@ def parse_positions_task():
                                 if project and keyword:
                                     retry_tasks.append(
                                         parse_and_save_position_async(session_db_retry, session_http_retry, project,
-                                                                      keyword)
+                                                                      keyword, semaphore)
                                     )
                             retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
                             logger.info("Повторный парсинг завершён")
@@ -354,38 +353,14 @@ def parse_positions_by_project_task(project_id: str):
     finally:
         session.close()
 
-    async def process_single_project_async(session_db, session_http, project: Project) -> List[Tuple[UUID, UUID]]:
-        """
-        Асинхронная обработка одного проекта:
-        - параллельно обрабатывает все ключевые слова с is_check=True,
-        - возвращает список (project.id, keyword.id) ключевых слов с ошибками.
-        """
-        failed_keywords_local = []
-        tasks = []
-        keywords_checked = [kw for kw in project.keywords if kw.is_check]
-
-        for keyword in keywords_checked:
-            tasks.append(parse_and_save_position_async(session_db, session_http, project, keyword))
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for keyword, result in zip(keywords_checked, results):
-            if isinstance(result, Exception):
-                logger.error(
-                    f"Ошибка при обработке ключевого слова '{keyword.keyword}' в проекте {project.id}: {result}")
-                failed_keywords_local.append((project.id, keyword.id))
-            elif result is False:
-                failed_keywords_local.append((project.id, keyword.id))
-
-        return failed_keywords_local
-
-    async def main(proj: Project):
+    async def main(proj):
+        semaphore = asyncio.Semaphore(RATE_LIMIT)
         failed_keywords: List[Tuple[UUID, UUID]] = []
 
         async with aiohttp.ClientSession() as session_http:
             session_db = SessionLocal()
             try:
-                failed_keywords.extend(await process_single_project_async(session_db, session_http, proj))
+                failed_keywords.extend(await process_single_project_async(session_db, session_http, proj, semaphore))
             except Exception as e:
                 logger.error(f"Ошибка при асинхронном парсинге проекта {proj.id}: {e}")
             finally:
@@ -402,7 +377,7 @@ def parse_positions_by_project_task(project_id: str):
                         keyword = session_db_retry.get(Keyword, keyword_id)
                         if keyword:
                             retry_tasks.append(
-                                parse_and_save_position_async(session_db_retry, session_http, proj, keyword)
+                                parse_and_save_position_async(session_db_retry, session_http, proj, keyword, semaphore)
                             )
                     retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
                     # Можно обработать retry_results, если надо
