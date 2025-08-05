@@ -157,6 +157,7 @@ def parse_response(response):
 
     try:
         raw_data_bytes = base64.b64decode(raw_data_b64)
+
         xml_root = ET.fromstring(raw_data_bytes)
     except Exception as e:
         logger.error(f"Ошибка при парсинге XML из rawData: {e}")

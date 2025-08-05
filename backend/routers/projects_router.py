@@ -3,7 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, load_only
 from sqlalchemy import desc
 from fastapi.responses import StreamingResponse
 import io
@@ -21,7 +21,8 @@ from services.topvizor_utils import (create_project_in_topvisor,
                                      add_or_update_keyword_topvisor,
                                      delete_keyword_topvisor,
                                      delete_project_topvisor,
-                                     update_project_topvisor)
+                                     update_project_topvisor,
+                                     import_keywords)
 
 import aiohttp
 import os
@@ -95,7 +96,7 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
 
         # Далее создаём локальный проект с топвизоровским id
         project_data = project_in.dict(exclude={"keywords"}, by_alias=False)
-        project_data["topvisor_id"] = topvisor_project_id
+        project_data["topvisor_id"] = int(topvisor_project_id)
 
         if "client_link" not in project_data or not project_data.get("client_link"):
             project_data["client_link"] = generate_client_link()
@@ -155,6 +156,7 @@ async def update_project(
         db: AsyncSession = Depends(get_db)
 ):
     try:
+        # Загружаем проект с ключевыми словами
         result = await db.execute(
             select(Project)
             .options(selectinload(Project.keywords))
@@ -165,26 +167,65 @@ async def update_project(
             raise HTTPException(status_code=404, detail="Project not found")
 
         update_data = project_in.dict(exclude_unset=True, by_alias=False)
-        update_data.pop("keywords", None)
+        keywords_update = update_data.pop("keywords", None)
 
-        # Формируем данные для Topvisor. Пример: подаем только поля, которые есть в Topvisor API (например, url, name)
-        topvisor_update_data = {}
-        if "domain" in update_data:
-            topvisor_update_data["url"] = update_data["domain"]
-            topvisor_update_data["name"] = update_data["domain"]
-        # Добавьте другие поля, которые нужно обновлять на Topvisor
+        domain_changed = "domain" in update_data and update_data["domain"] != project.domain
 
-        if topvisor_update_data:
-            # Обновляем проект на Topvisor
+        # Используем готовые функции из вашего утилитного модуля
+        if domain_changed:
+            new_domain = update_data["domain"]
             try:
-                await update_project_topvisor(project.topvisor_id, topvisor_update_data)
-            except Exception as e:
-                logging.error(f"Ошибка обновления проекта в Topvisor: {e}")
-                raise HTTPException(status_code=500, detail="Failed to update project in Topvisor")
+                # Удаляем старый проект в Topvisor, если есть id
+                if project.topvisor_id:
+                    await delete_project_topvisor(project.topvisor_id)
 
-        # Обновляем проект локально после успешного обновления Topvisor
-        for key, value in update_data.items():
-            setattr(project, key, value)
+                # Создаём новый проект с новым доменом
+                new_topvisor_id = await create_project_in_topvisor(url=new_domain, name=new_domain)
+                if not new_topvisor_id:
+                    raise HTTPException(status_code=500, detail="Failed to create new project in Topvisor")
+
+                # Импортируем ключевые слова старого проекта
+                if project.keywords:
+                    keywords_list = [
+                        kw.keyword for kw in project.keywords
+                        if kw.keyword and isinstance(kw.keyword, str) and kw.keyword.strip()
+                    ]
+                    if keywords_list:
+                        await import_keywords(int(new_topvisor_id), keywords_list)
+
+                # Обновляем локальный проект (url и topvisor_id)
+                project.domain = new_domain
+                project.topvisor_id = int(new_topvisor_id)
+
+            except Exception as e:
+                logging.error(f"Ошибка при обновлении url проекта в Topvisor: {e}")
+                raise HTTPException(status_code=500, detail="Failed to update project domain in Topvisor")
+
+        else:
+            # Если url не меняется
+            topvisor_update_data = {}
+            if "domain" in update_data:
+                # Можно обновлять только имя (name), т.к. url менять нельзя
+                topvisor_update_data["name"] = update_data["domain"]
+            # Обновите другие поля Topvisor, если нужно
+
+            if topvisor_update_data and project.topvisor_id:
+                try:
+                    await update_project_topvisor(project.topvisor_id, topvisor_update_data)
+                except Exception as e:
+                    logging.error(f"Ошибка обновления проекта в Topvisor: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to update project in Topvisor")
+
+            # Локально обновляем остальные поля
+            for key, value in update_data.items():
+                setattr(project, key, value)
+
+        # При передаче ключевых слов - можно реализовать логику их обновления (если нужно)
+        if keywords_update is not None:
+            # Логика обновления ключевых слов в базе и Topvisor
+            # Например, можно удалить старые ключи и импортировать новые через import_keywords
+            # Или реализовать более тонкую синхронизацию
+            pass
 
         await db.commit()
         await db.refresh(project)
@@ -277,34 +318,45 @@ async def update_keyword(
         db: AsyncSession = Depends(get_db)
 ):
     try:
-        keyword = await db.get(Keyword, keyword_id)
+        # Загружаем ключевое слово вместе с проектом и топвизор id (жёсткая загрузка)
+        result = await db.execute(
+            select(Keyword)
+            .options(selectinload(Keyword.project))  # чтобы project был загружен, а не лениво
+            .where(Keyword.id == keyword_id)
+        )
+        keyword = result.scalar_one_or_none()
+
         if keyword is None or keyword.project_id != project_id:
             raise HTTPException(status_code=404, detail="Keyword not found in project")
 
         old_keyword_text = keyword.keyword
-
         update_data = keyword_in.dict(exclude_unset=True, by_alias=False)
+
+        # Обновляем поля объекта
         for key, value in update_data.items():
             if key != "id":
                 setattr(keyword, key, value)
 
-        # Удаляем старый ключ в Topvisor, если текст изменился
-        if "keyword" in update_data and update_data["keyword"] != old_keyword_text:
+        # Сохраняем изменения в БД пока без вызова внешних API
+        await db.commit()
+        await db.refresh(keyword)
+
+        # Теперь безопасно получить topvisor_id (проект уже загружен)
+        topvisor_id = keyword.project.topvisor_id if keyword.project else None
+
+        # Если изменился ключ — синхронизируем с Topvisor
+        if "keyword" in update_data and update_data["keyword"] != old_keyword_text and topvisor_id:
             try:
-                await delete_keyword_topvisor(keyword.project.topvisor_id, old_keyword_text)
+                await delete_keyword_topvisor(topvisor_id, old_keyword_text)
             except Exception as e:
                 logging.error(f"Ошибка удаления старого ключа в Topvisor: {e}")
                 raise HTTPException(status_code=500, detail="Failed to delete old keyword in Topvisor")
 
-        await db.commit()
-        await db.refresh(keyword)
-
-        # Импортируем новый ключ в Topvisor
-        try:
-            await add_or_update_keyword_topvisor(keyword.project.topvisor_id, keyword.keyword)
-        except Exception as e:
-            logging.error(f"Ошибка добавления нового ключа в Topvisor: {e}")
-            raise HTTPException(status_code=500, detail="Failed to add new keyword in Topvisor")
+            try:
+                await add_or_update_keyword_topvisor(topvisor_id, update_data["keyword"])
+            except Exception as e:
+                logging.error(f"Ошибка добавления нового ключа в Topvisor: {e}")
+                raise HTTPException(status_code=500, detail="Failed to add new keyword in Topvisor")
 
         return keyword
 
@@ -315,6 +367,7 @@ async def update_keyword(
         raise HTTPException(status_code=500, detail="Failed to update keyword")
 
 
+
 @router.delete("/{project_id}/keywords/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_keyword(
         project_id: UUID,
@@ -322,7 +375,14 @@ async def delete_keyword(
         db: AsyncSession = Depends(get_db)
 ):
     try:
-        keyword = await db.get(Keyword, keyword_id)
+        # Загружаем ключевое слово с проектом вместе, чтобы избежать lazy load вне контекста
+        result = await db.execute(
+            select(Keyword)
+            .options(selectinload(Keyword.project))
+            .where(Keyword.id == keyword_id)
+        )
+        keyword = result.scalar_one_or_none()
+
         if not keyword or keyword.project_id != project_id:
             raise HTTPException(status_code=404, detail="Keyword not found in project")
 
@@ -356,76 +416,87 @@ async def delete_keyword(
 #         raise
 #     except Exception as e:
 #         logger.error("Failed to check project: %s", e)
-#         raise HTTPException(status_code=500, detail="Failed to check project")
-#
 
 
-@router.post("/{project_id}/check", status_code=status.HTTP_200_OK)
+
+@router.post("/{project_id}/check")
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
-        # Загружаем все существующие проекты с ключевыми словами
+        logging.info("Запуск синхронизации проектов с Topvisor")
+
+        # Загружаем все проекты с ключевыми словами
         result = await db.execute(
             select(Project)
             .options(selectinload(Project.keywords))
+            .options(load_only(Project.id, Project.domain, Project.topvisor_id))
         )
         projects = result.scalars().all()
+        logging.info(f"Найдено проектов: {len(projects)}")
+
+        if not projects:
+            return {"message": "Проекты не найдены"}
 
         async with aiohttp.ClientSession() as session:
             for project in projects:
-                # Создаем проект на Topvisor, имя = домен
+                project_id_local = project.id
                 try:
-                    # Если проект уже создан на Topvisor (есть topvisor_id), пропускаем создание
                     if project.topvisor_id:
-                        logging.info(f"Проект {project.domain} уже есть на Topvisor с id {project.topvisor_id}")
+                        logging.info(f"Проект {project.domain} уже зарегистрирован в Topvisor")
                         continue
 
+                    project_domain = project.domain
                     api_url = "https://api.topvisor.com/v2/json/add/projects_2/projects"
                     headers = {
                         "User-Id": TOPVIZOR_ID,
                         "Authorization": TOPVIZOR_API_KEY,
                         "Content-Type": "application/json"
                     }
-                    payload = {
-                        "url": project.domain,
-                        "name": project.domain
-                    }
+                    payload = {"url": project_domain, "name": project_domain}
 
+                    logging.info(f"Создаём проект в Topvisor для домена {project_domain}")
                     async with session.post(api_url, json=payload, headers=headers) as resp:
                         resp.raise_for_status()
                         data = await resp.json()
                         topvisor_project_id = data.get("result")
                         if not topvisor_project_id:
-                            logging.error(f"Не удалось получить ID проекта Topvisor для проекта {project.id}")
+                            logging.error(f"Не удалось получить ID проекта для {project_domain}")
                             continue
 
-                    # Сохраняем полученный topvisor_id в базе
-                    project.topvisor_id = topvisor_project_id
+                    project.topvisor_id = int(topvisor_project_id)
                     await db.commit()
                     await db.refresh(project)
-                    logging.info(f"Создан проект {project.domain} на Topvisor с id {topvisor_project_id}")
+                    logging.info(f"Проект {project_domain} создан в Topvisor")
 
-                    # Создаем ключи для проекта на Topvisor
-                    if project.keywords:
-                        keywords_str = "\n".join([kw.keyword for kw in project.keywords])
+                    keywords_list = [
+                        kw.keyword for kw in project.keywords
+                        if kw.keyword and isinstance(kw.keyword, str) and kw.keyword.strip()
+                    ]
+                    if keywords_list:
+                        keywords_str = "\n".join(keywords_list)
                         keywords_api_url = "https://api.topvisor.com/v2/json/add/keywords_2/keywords/import"
                         payload_keywords = {
-                            "project_id": topvisor_project_id,
+                            "project_id": project.topvisor_id,
                             "keywords": keywords_str
                         }
+
+                        logging.info(f"Импорт ключевых слов в Topvisor для проекта {project_domain}")
+
                         async with session.post(keywords_api_url, json=payload_keywords, headers=headers) as resp_kw:
                             resp_kw.raise_for_status()
                             data_kw = await resp_kw.json()
                             if "errors" in data_kw:
-                                logging.error(
-                                    f"Ошибка импорта ключей для проекта {project.domain}: {data_kw['errors']}")
+                                logging.error(f"Ошибка импорта ключей для {project_domain}: {data_kw['errors']}")
                             else:
-                                logging.info(f"Ключи добавлены в проект Topvisor {project.domain}")
+                                logging.info(f"Ключи успешно добавлены в Topvisor для проекта {project_domain}")
+
                 except Exception as e:
-                    logging.error(f"Ошибка обработки проекта {project.domain}: {e}")
+                    logging.error(f"Ошибка обработки проекта с id={project_id_local}: {e}", exc_info=True)
                     await db.rollback()
-        return {"message": "Проверка и синхронизация проектов завершена"}
+
+        return {"message": "Синхронизация проектов и ключей с Topvisor завершена"}
+
     except Exception as e:
-        logging.error(f"Ошибка в run_position_check: {e}")
+        logging.error(f"Ошибка в run_position_check: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
