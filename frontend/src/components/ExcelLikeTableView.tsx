@@ -414,7 +414,15 @@ export function ExcelLikeTableView({
   // Объединяем даты и интервалы игрока с местом вставки итогов после каждой даты интервала
   const mergedTabs = useMemo(() => mergeDatesWithIntervals(uniqueDates, dateGroups), [uniqueDates, dateGroups]);
 
-  const [selectedTab, setSelectedTab] = useState(0);
+  // Состояние выбраной вкладки — изначально null (или 0)
+  const [selectedTab, setSelectedTab] = useState<number>(0);
+
+  // Когда mergedTabs обновится, выставляем выбранную вкладку на последнюю
+  React.useEffect(() => {
+	  setSelectedTab(mergedTabs.length); // "Инфо" - 0, остальные с 1, значит последняя - mergedTabs.length
+	}, [mergedTabs]);
+
+
 
   // Отрисовка карточек для интервалов - просто список данных
   {/*function renderIntervalCards(intervalLabel: string) {
