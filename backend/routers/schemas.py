@@ -96,6 +96,7 @@ class ProjectBase(BaseModel):
     domain: constr(min_length=1)
     search_engine: SearchEngineEnum = Field(SearchEngineEnum.yandex, alias="searchEngine")
     schedule: ScheduleEnum = Field(ScheduleEnum.daily, alias="schedule")
+    topvisor_id: Optional[int] = None
 
     class Config:
         allow_population_by_field_name = True  # Позволяет создавать модель и по snake_case

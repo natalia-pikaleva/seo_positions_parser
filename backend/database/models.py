@@ -1,7 +1,7 @@
 import enum
 import uuid
 from sqlalchemy import (Column, String, Integer, DateTime, ForeignKey, Enum,
-                        UniqueConstraint, Boolean)
+                        UniqueConstraint, Boolean, BigInteger  )
 from sqlalchemy.sql import desc
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -53,6 +53,7 @@ class Project(Base):
     schedule = Column(Enum(ScheduleEnum), default=ScheduleEnum.daily, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     client_link = Column(String, unique=True, nullable=False)
+    topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
 
     keywords = relationship("Keyword",
                             order_by=[desc(Keyword.is_check), Keyword.keyword],
