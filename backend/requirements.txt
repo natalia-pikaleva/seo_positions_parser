@@ -17,3 +17,4 @@ bcrypt
 pandas
 openpyxl
 uvicorn
+aiohttp

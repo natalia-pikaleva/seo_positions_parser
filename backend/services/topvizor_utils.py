@@ -84,7 +84,7 @@ async def add_or_update_keyword_topvisor(project_id: int, keyword: str):
 
 
 async def delete_keyword_topvisor(project_id: int, keyword: str):
-    url = "https://api.topvisor.com/v2/json/delete/keywords_2/keywords"
+    url = "https://api.topvisor.com/v2/json/del/keywords_2/keywords"
     headers = {
         "User-Id": TOPVIZOR_ID,
         "Authorization": TOPVIZOR_API_KEY,
@@ -103,7 +103,7 @@ async def delete_keyword_topvisor(project_id: int, keyword: str):
 
 
 async def delete_project_topvisor(project_id: int):
-    url = "https://api.topvisor.com/v2/json/delete/projects_2/projects"
+    url = "https://api.topvisor.com/v2/json/del/projects_2/projects"
     headers = {
         "User-Id": TOPVIZOR_ID,
         "Authorization": TOPVIZOR_API_KEY,
@@ -120,7 +120,7 @@ async def delete_project_topvisor(project_id: int):
 
 
 async def update_project_topvisor(project_id: int, update_data: dict):
-    url = "https://api.topvisor.com/v2/json/edit/projects_2/projects"
+    url = "https://api.topvisor.com/v2/json/edit/projects" 
     headers = {
         "User-Id": TOPVIZOR_ID,
         "Authorization": TOPVIZOR_API_KEY,
