@@ -41,23 +41,20 @@ async def start_topvisor_position_check(session_http: aiohttp.ClientSession, top
         "Content-Type": "application/json"
     }
     payload = {
-        "filters": [
-            {
-                "name": "id",  # или "project", уточните в документации/тестах
-                "operator": "EQUALS",
-                "values": [topvisor_project_id]
-            }
-        ],
-        # "regions_indexes": [region_key]
+        "filters": [{"name": "id", "operator": "EQUALS", "values": [topvisor_project_id]}]
     }
-    async with session_http.post(url, json=payload, headers=headers) as resp:
-        if resp.status != 200:
-            logger.error(f"Failed to start position check for project {topvisor_project_id}, status {resp.status}")
-            return None
-        data = await resp.json()
-        logger.info(f"Position check started for project {topvisor_project_id}: {data}")
-
-        return data
+    logger.info(f"Starting position check for project {topvisor_project_id} with payload: {payload}")
+    try:
+        async with session_http.post(url, json=payload, headers=headers) as resp:
+            logger.info(f"Response status: {resp.status} for start_topvisor_position_check")
+            resp.raise_for_status()
+            data = await resp.json()
+            logger.info(f"Position check response data: {data}")
+            return data
+    except Exception as e:
+        logger.error(f"Exception in start_topvisor_position_check for project {topvisor_project_id}: {e}",
+                     exc_info=True)
+        return None
 
 
 async def get_positions_topvisor(session_http: aiohttp.ClientSession,
@@ -142,7 +139,6 @@ def get_region_key_index_static(region_name: str) -> Optional[Tuple[int, int]]:
     if key is not None and index is not None:
         return (key, index)
     return None
-
 
 
 async def fetch_all_positions(session_http: aiohttp.ClientSession, project_id: int, region_key: int, date: str):
@@ -240,7 +236,6 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
         raise
 
 
-
 def get_region_key_from_keywords(keywords: List[Keyword]) -> Tuple[int, int]:
     """
     Из списка ключевых слов ищет первое включенное ключевое слово с регионом,
@@ -257,7 +252,6 @@ def get_region_key_from_keywords(keywords: List[Keyword]) -> Tuple[int, int]:
                 return result
     # Значения по умолчанию для Москвы
     return (213, 1)
-
 
 
 async def process_keyword_wrapper(semaphore, session_db, all_positions_data, kw, domain, project_id,
@@ -423,7 +417,7 @@ async def wait_for_positions(session_http, project_id, region_key, max_wait=900,
 
 
 async def main_task(project_id: UUID):
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(1)  # Последовательная обработка ключевых слов
 
     async with aiohttp.ClientSession() as session_http:
         async with AsyncSessionLocal() as session_db:
@@ -435,68 +429,153 @@ async def main_task(project_id: UUID):
             )
             project = result.scalar_one_or_none()
             if not project:
-                logger.error(f"Проект с id={project_id} не найден")
-                return
+                logger.error(f"Project with id={project_id} not found")
+                return False, "not_found"
 
-            # Получаем кортеж (region_key, region_index) из ключевых слов
-            region_key, region_index = get_region_key_from_keywords(
-                project.keywords)  # Например (213, 1) для Москвы
+            logger.info(f"Processing project: {project.domain}, id={project.id}")
 
-            topvisor_project_id = project.topvisor_id  # числовой ID в Topvisor
+            region_key, region_index = get_region_key_from_keywords(project.keywords)
+            topvisor_project_id = project.topvisor_id
 
-            # Получаем актуальные данные проекта с API Topvisor (например, регионы)
-            data = await get_project_info_by_topvizor(topvisor_project_id)
-            logger.info("Данные проекта с топвизора: %s", data)
+            # Вспомогательная функция проверки ошибок доступа
+            def has_access_error(response):
+                if isinstance(response, dict) and "errors" in response:
+                    for err in response["errors"]:
+                        if err.get("code") == 54:
+                            return True
+                return False
 
-            # Добавляем Яндекс в проект (searcher_key=0)
-            await add_searcher_to_project(session_http, topvisor_project_id, searcher_key=0)
+            try:
+                data = await get_project_info_by_topvizor(topvisor_project_id)
+                logger.info(f"Topvisor project info for project {project.domain}: {data}")
+                if has_access_error(data):
+                    logger.error(f"Access denied for project info of {project.domain}")
+                    return False, "access_denied"
+            except Exception as e:
+                logger.error(f"Error getting project info from Topvisor for project {project.domain}: {e}", exc_info=True)
+                return False, "exception"
 
-            # Добавляем регион поиска в Яндекс
-            # Используем region_key (key региона) при добавлении региона в проект
-            await add_searcher_region(session_http, topvisor_project_id, searcher_key=0, region_key=region_key)
+            try:
+                resp = await add_searcher_to_project(session_http, topvisor_project_id, searcher_key=0)
+                if has_access_error(resp):
+                    logger.error(f"Access denied adding searcher for project {project.domain}")
+                    return False, "access_denied"
+            except Exception as e:
+                logger.error(f"Error adding searcher to project {project.domain}: {e}", exc_info=True)
+                return False, "exception"
 
-            # Запускаем проверку позиций в Topvisor
-            start_result = await start_topvisor_position_check(session_http, topvisor_project_id)
-            if not start_result:
-                logger.error("Не удалось запустить проверку позиций")
-                return
+            try:
+                resp = await add_searcher_region(session_http, topvisor_project_id, searcher_key=0, region_key=region_key)
+                if has_access_error(resp):
+                    logger.error(f"Access denied adding searcher region for project {project.domain}")
+                    return False, "access_denied"
+            except Exception as e:
+                logger.error(f"Error adding searcher region to project {project.domain}: {e}", exc_info=True)
+                return False, "exception"
 
-            logger.info("Проверка позиций запущена, ожидаем результаты...")
+            try:
+                start_result = await start_topvisor_position_check(session_http, topvisor_project_id)
+                logger.info(f"Position check start response for project {project.domain}: {start_result}")
+                if not start_result:
+                    logger.error(f"Failed to start position check for project {project.domain}")
+                    return False, "start_failed"
+                if has_access_error(start_result):
+                    logger.error(f"Access denied starting position check for project {project.domain}")
+                    return False, "access_denied"
+            except Exception as e:
+                logger.error(f"Error starting position check for project {project.domain}: {e}", exc_info=True)
+                return False, "exception"
 
-            # Ждем готовности данных, при этом используем region_index — индекс региона для запроса позиций
+            logger.info(f"Waiting for positions data for project {project.domain}")
+
             positions_data = await wait_for_positions(session_http, topvisor_project_id, region_index)
             if not positions_data:
-                logger.warning("Данные позиций так и не появились")
-                return
+                logger.warning(f"Positions data not ready for project {project.domain}")
+                return False, "positions_not_ready"
 
             failed = []
             date_today = datetime.utcnow().strftime("%Y-%m-%d")
 
-            tasks = [
-                process_keyword_wrapper(
-                    semaphore,
-                    session_db,
-                    positions_data,
-                    kw,
-                    project.domain,
-                    project.id,
-                    failed,
-                    region_index,  # Передаем индекс региона (index)
-                    date_today,
-                    topvisor_project_id
-                )
-                for kw in project.keywords if kw.is_check
-            ]
-            await asyncio.gather(*tasks)
+            # Последовательная обработка ключевых слов
+            for kw in [k for k in project.keywords if k.is_check]:
+                try:
+                    await process_keyword_wrapper(
+                        semaphore,
+                        session_db,
+                        positions_data,
+                        kw,
+                        project.domain,
+                        project.id,
+                        failed,
+                        region_index,
+                        date_today,
+                        topvisor_project_id
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing keyword {kw.keyword} for project {project.domain}: {e}", exc_info=True)
+                    failed.append((project.id, kw.id))
 
-            logger.info(f"Обновление позиций завершено. Неудачных ключевых слов: {len(failed)}")
+            logger.info(f"Position update completed for {project.domain}. Failed keywords count: {len(failed)}")
 
-            # После завершения всех задач коммитим сессию
             try:
                 await session_db.commit()
-                logger.info(f"Коммит всех позиций проекта {project.id} успешен")
+                logger.info(f"Database commit successful for project {project.domain}")
             except Exception as e:
-                logger.error(f"Ошибка коммита после обработки всех ключей: {e}", exc_info=True)
+                logger.error(f"Error during DB commit for project {project.domain}: {e}", exc_info=True)
                 await session_db.rollback()
 
-            return failed
+            return True, None
+
+
+
+@celery_app.task
+def run_main_task():
+    logger.info(f"START run_main_task: TOPVIZOR_ID={TOPVIZOR_ID}, API_KEY set={bool(TOPVIZOR_API_KEY)}")
+
+    async def process_projects():
+        async with AsyncSessionLocal() as session_db:
+            result = await session_db.execute(
+                select(Project)
+                .options(selectinload(Project.keywords))
+                .where(Project.topvisor_id.isnot(None))
+            )
+            projects = result.scalars().all()
+
+            if not projects:
+                logger.info("No projects with topvisor_id found for processing.")
+                return "No projects found"
+
+            logger.info(f"Found {len(projects)} projects to process.")
+
+            failed = []
+            access_denied_domains = []
+
+            for project in projects:
+                logger.info(f"Start processing project id={project.id}, domain={project.domain}")
+                try:
+                    success, error = await main_task(project.id)
+                    if not success:
+                        logger.warning(f"Project {project.domain} processing failed with error: {error}")
+                        failed.append(str(project.id))
+                        if error == "access_denied":
+                            access_denied_domains.append(project.domain)
+                        continue
+                    logger.info(f"Finished processing project id={project.id}, domain={project.domain}")
+                except Exception as e:
+                    logger.error(f"Error processing project id={project.id}: {e}", exc_info=True)
+                    failed.append(str(project.id))
+
+            if access_denied_domains:
+                logger.warning(f"Projects skipped due to access denied: {access_denied_domains}")
+
+            if failed:
+                logger.warning(f"Failed projects: {failed}")
+            else:
+                logger.info("All projects processed successfully.")
+
+            return {
+                "failed_projects": failed,
+                "access_denied_domains": access_denied_domains
+            }
+
+    return asyncio.run(process_projects())

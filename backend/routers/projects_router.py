@@ -80,13 +80,10 @@ async def get_projects(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to get projects")
 
 
-from fastapi import BackgroundTasks
-
-
 @router.post("/", response_model=ProjectOut, status_code=201)
 async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(get_db)):
     try:
-        # Создаём проект в Topvisor
+        # 1. Создаём проект в Topvisor
         topvisor_project_id = await create_project_in_topvisor(
             url=project_in.domain,
             name=project_in.domain if project_in.domain else None
@@ -95,18 +92,19 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
             logging.error("Не удалось создать проект в Topvisor")
             raise HTTPException(status_code=500, detail="Ошибка создания проекта в Topvisor")
 
-        # Далее создаём локальный проект с топвизоровским id
+        # 2. Создаём локальный проект с topvisor_id
         project_data = project_in.dict(exclude={"keywords"}, by_alias=False)
         project_data["topvisor_id"] = int(topvisor_project_id)
 
-        if "client_link" not in project_data or not project_data.get("client_link"):
+        if not project_data.get("client_link"):
             project_data["client_link"] = generate_client_link()
 
-        if "created_at" not in project_data or not project_data.get("created_at"):
+        if not project_data.get("created_at"):
             project_data["created_at"] = datetime.utcnow()
 
         project = Project(**project_data)
 
+        # Добавляем ключевые слова в объект проекта (для базы)
         for kw_in in project_in.keywords:
             keyword = Keyword(
                 keyword=kw_in.keyword,
@@ -119,15 +117,52 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
             project.keywords.append(keyword)
 
         db.add(project)
+
+        # 3. Пробуем добавить ключи в Topvisor через API
+
+        async def add_keywords_to_topvisor():
+
+            async with aiohttp.ClientSession() as session_http:
+                keywords_list = [kw.keyword for kw in project_in.keywords if kw.keyword]
+                if not keywords_list:
+                    return
+
+                keywords_str = "\n".join(keywords_list)
+
+                keywords_api_url = "https://api.topvisor.com/v2/json/add/keywords_2/keywords/import"
+                headers = {
+                    "User-Id": TOPVIZOR_ID,
+                    "Authorization": TOPVIZOR_API_KEY,
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "project_id": int(topvisor_project_id),  # Topvisor project ID как int
+                    "keywords": keywords_str
+                }
+
+                async with session_http.post(keywords_api_url, json=payload, headers=headers) as resp:
+                    if resp.status != 200:
+                        logging.error(f"Ошибка импорта ключей в Topvisor, статус: {resp.status}")
+                        raise HTTPException(status_code=500, detail="Ошибка импорта ключей в Topvisor")
+                    data = await resp.json()
+                    if "errors" in data:
+                        logging.error(f"Ошибка в ответе Topvisor при импорте ключей: {data['errors']}")
+                        raise HTTPException(status_code=500, detail="Ошибка импорта ключей в Topvisor")
+                    logging.info(f"Ключи успешно импортированы в Topvisor: {data}")
+
+        await add_keywords_to_topvisor()
+
+        # 4. После удачного добавления ключей коммитим транзакцию
         await db.commit()
         await db.refresh(project)
         await db.refresh(project, attribute_names=["keywords"])
+
         return project
 
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Ошибка при создании проекта: {e}")
+        logging.error(f"Ошибка при создании проекта: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create project")
 
 
@@ -405,14 +440,11 @@ async def delete_keyword(
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
         await main_task(project_id)
-#         project = await db.get(Project, project_id)
-#         if not project:
-#             raise HTTPException(status_code=404, detail="Project not found")
-#
-#         logger.info(f"Запуск задачи parse_positions_task для проекта {project_id}")
-#         # Запуск задачи только для одного проекта
-#         parse_positions_by_project_task.delay(str(project_id))
-#         return {"message": f"Парсер запущен для проекта {project.domain}"}
+        project = await db.get(Project, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        return {"message": f"Парсер запущен для проекта {project.domain}"}
     except HTTPException:
         raise
     except Exception as e:
