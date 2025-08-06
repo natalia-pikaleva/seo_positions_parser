@@ -5,7 +5,7 @@ celery_app = Celery(
     "services",
     broker="redis://localhost:6379/0",
     backend="redis://localhost:6379/0",
-    include=["services.task"]  # указываем модуль с задачами
+    include=["services.topvizor_task"]  # указываем модуль с задачами
 )
 
 # Конфигурация Celery
@@ -17,7 +17,7 @@ celery_app.conf.update(
 # Настройка расписания для Celery Beat
 celery_app.conf.beat_schedule = {
     "parse_positions_nightly": {
-        "task": "services.task.parse_positions_task",  # полный путь к задаче
-        "schedule": crontab(hour=12, minute=00),
+        "task": "services.topvizor_task.run_main_task",  # полный путь к задаче
+        "schedule": crontab(hour=11, minute=00),
     },
 }
