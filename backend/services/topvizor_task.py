@@ -3,11 +3,16 @@ from datetime import datetime
 from services.celery_app import celery_app
 import os
 from dotenv import load_dotenv
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import logging
 import asyncio
 import aiohttp
 from uuid import UUID
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from services.topvizor_utils import get_project_info_by_topvizor
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +21,48 @@ load_dotenv()
 TOPVIZOR_ID = os.getenv("TOPVIZOR_ID", "")
 TOPVIZOR_API_KEY = os.getenv("TOPVIZOR_API_KEY", "")
 
+DB_USER = os.getenv("POSTGRES_USER", "amin")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "my_super_password")
+DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+DB_NAME = os.getenv("POSTGRES_DB", "seo_parser_db")
 
-async def get_positions_topvisor(session_http: aiohttp.ClientSession, project_id: int, region_key: int, date: str):
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL_ASYNC = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+engine = create_async_engine(DATABASE_URL_ASYNC)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def start_topvisor_position_check(session_http: aiohttp.ClientSession, topvisor_project_id: int):
+    url = "https://api.topvisor.com/v2/json/edit/positions_2/checker/go"
+    headers = {
+        "User-Id": TOPVIZOR_ID,
+        "Authorization": TOPVIZOR_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "filters": [
+            {
+                "name": "id",  # или "project", уточните в документации/тестах
+                "operator": "EQUALS",
+                "values": [topvisor_project_id]
+            }
+        ],
+        # "regions_indexes": [region_key]
+    }
+    async with session_http.post(url, json=payload, headers=headers) as resp:
+        if resp.status != 200:
+            logger.error(f"Failed to start position check for project {topvisor_project_id}, status {resp.status}")
+            return None
+        data = await resp.json()
+        logger.info(f"Position check started for project {topvisor_project_id}: {data}")
+
+        return data
+
+
+async def get_positions_topvisor(session_http: aiohttp.ClientSession,
+                                 project_id: int, region_key: int,
+                                 date: str, searcher_key: int):
     url = "https://api.topvisor.com/v2/json/get/positions_2/history"
     headers = {
         "User-Id": TOPVIZOR_ID,
@@ -26,35 +71,47 @@ async def get_positions_topvisor(session_http: aiohttp.ClientSession, project_id
     }
     payload = {
         "project_id": project_id,
-        "region_key": region_key,
-        "date1": date,
-        "date2": date
+        "regions_indexes": [region_key],
+        "searcher_keys": [searcher_key],  # укажите нужный searcher, например Яндекс
+        "dates": [date],
+        "show_headers": True,
+        "show_tops": True
     }
+    logger.info(
+        f"Запрос в Topvisor: project_id={project_id}, searcher_keys={[searcher_key]}, regions_indexes={[region_key]}, date1={date}, date2={date}"
+    )
 
     async with session_http.post(url, json=payload, headers=headers) as resp:
         if resp.status != 200:
-            # Логируем в вызывающей функции, здесь возвращаем None
+            logger.error(f"Topvisor API вернул статус {resp.status} для проекта {project_id}")
             return None
-        data = await resp.json()
 
-    # Проверка, есть ли "result" и он непустой
-    result = data.get("result")
-    if result is None:
+        data = await resp.json()
+        logger.info(f"Topvisor API ответ: {data}")
+
+    if "errors" in data:
+        logger.error(f"Topvisor API ошибки для проекта {project_id}: {data['errors']}")
         return None
 
+    result = data.get("result")
     if not result:
-        # Пустой список позиций
+        logger.warning(f"Topvisor API вернул пустой result для проекта {project_id}")
+        return None
+
+    keywords = result.get("keywords")
+    if keywords is None:
+        logger.warning(f"Topvisor API result не содержит keywords для проекта {project_id}")
         return []
 
-    return result
+    return keywords
 
 
 def find_position_from_topvisor_result(result: list, keyword: str, domain: str) -> int:
     domain = domain.lower()
     for item in result:
         # item содержит ключевое слово и позиции (массив под ключом 'positions')
-        if item.get("keyword", "").lower() == keyword.lower():
-            positions = item.get("positions", [])
+        if item.get("name", "").lower() == keyword.lower():
+            positions = item.get("positionsData", [])
             for pos_obj in positions:
                 url = pos_obj.get("url", "").lower()
                 pos = pos_obj.get("position")
@@ -66,108 +123,380 @@ def find_position_from_topvisor_result(result: list, keyword: str, domain: str) 
     return None
 
 
-def region_to_lr_code(region: str) -> int:
-    mapping = {
+def get_region_key_index_static(region_name: str) -> Optional[Tuple[int, int]]:
+    key_mapping = {
         "Москва": 213,
         "Санкт-Петербург": 2,
         "Новосибирск": 154,
         "Екатеринбург": 159,
     }
-    return mapping.get(region, 213)  # по умолчанию Москва
+    index_mapping = {
+        "Москва": 1,
+        "Санкт-Петербург": 3,
+        "Новосибирск": 154,
+        "Екатеринбург": 159,
+    }
+    region_name_title = region_name.title()
+    key = key_mapping.get(region_name_title)
+    index = index_mapping.get(region_name_title)
+    if key is not None and index is not None:
+        return (key, index)
+    return None
+
 
 
 async def fetch_all_positions(session_http: aiohttp.ClientSession, project_id: int, region_key: int, date: str):
     # Получаем все позиции проекта за регион и дату (один запрос)
-    return await get_positions_topvisor(session_http, project_id, region_key, date)
+    return await get_positions_topvisor(session_http, project_id, region_key, date, searcher_key=0)
 
 
-def process_single_keyword_position(session_db, position_data: dict, keyword: Keyword, domain: str) -> bool:
-    # Находит позицию по ключевому слову в переданных данных position_data (ответ API),
-    # сохранит запись в БД, если позиция найдена, и вернет True/False
+async def process_single_keyword_position(session_db: AsyncSession, position_data: list, keyword: Keyword,
+                                          domain: str, project_id: int, region_index: int, date: str) -> bool:
+    try:
+        logger.info(f"Обработка ключевого слова '{keyword.keyword}'")
+        position = None
+        keyword_text = keyword.keyword.lower()
+        domain_lower = domain.lower()
 
-    position = None
-    keyword_text = keyword.keyword.lower()
-    domain_lower = domain.lower()
+        for item in position_data:
+            if item.get("name", "").lower() == keyword_text:
+                positions_data = item.get("positionsData", {})
+                logger.info(f"PositionsData для ключа '{keyword.keyword}': {positions_data}")
+                if not positions_data:
+                    logger.info(f"Позиции не найдены для ключа '{keyword.keyword}'")
+                    return False
 
-    for item in position_data:
-        if item.get("keyword", "").lower() == keyword_text:
-            positions = item.get("positions", [])
-            for pos_obj in positions:
-                url = pos_obj.get("url", "").lower()
-                pos = pos_obj.get("position")
-                if domain_lower in url:
-                    position = pos
-                    break
-            if position is None and positions:
-                position = positions[0].get("position")
-            break
+                key_for_date = f"{date}:{project_id}:{region_index}"
+                pos_info = positions_data.get(key_for_date)
 
-    if position is None:
-        return False  # позиция не найдена
+                if pos_info is None:
+                    logger.info(
+                        f"Позиция по ключу '{keyword.keyword}' не найдена для даты {date}, ключ запроса: {key_for_date}")
+                    return False
 
-    last_pos = (
-        session_db.query(Position)
-        .filter(Position.keyword_id == keyword.id)
-        .order_by(Position.checked_at.desc())
-        .first()
+                try:
+                    position = int(pos_info.get("position"))
+                    logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
+                except (TypeError, ValueError) as e:
+                    logger.warning(
+                        f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_info.get('position')}, ошибка: {e}")
+                    return False
+
+                break
+
+        if position is None:
+            logger.info(f"Позиция для ключевого слова '{keyword.keyword}' не найдена в данных Topvisor")
+            return False  # позиция не найдена
+
+        # Получаем последнюю сохранённую позицию из БД
+        stmt = (
+            select(Position)
+            .filter(Position.keyword_id == keyword.id)
+            .order_by(Position.checked_at.desc())
+            .limit(1)
+        )
+        result = await session_db.execute(stmt)
+        last_pos = result.scalars().first()
+        previous_position = last_pos.position if last_pos else None
+        logger.info(f"Прошлая позиция для ключа '{keyword.keyword}': {previous_position}")
+
+        # Расчёт стоимости
+        if position > 10:
+            cost = 0
+        elif 1 <= position <= 3:
+            cost = keyword.price_top_1_3
+        elif 4 <= position <= 5:
+            cost = keyword.price_top_4_5
+        else:
+            cost = keyword.price_top_6_10
+        logger.info(f"Рассчитанная стоимость для ключа '{keyword.keyword}': {cost}")
+
+        # Определение тренда изменения позиции
+        if previous_position is None:
+            trend = TrendEnum.stable
+        elif position < previous_position:
+            trend = TrendEnum.up
+        elif position > previous_position:
+            trend = TrendEnum.down
+        else:
+            trend = TrendEnum.stable
+        logger.info(f"Тренд для ключа '{keyword.keyword}': {trend}")
+
+        # Создаём запись позиции
+        pos_record = Position(
+            keyword_id=keyword.id,
+            checked_at=datetime.utcnow(),
+            position=position,
+            previous_position=previous_position,
+            cost=cost,
+            trend=trend,
+        )
+        session_db.add(pos_record)
+        logger.info(f"Позиция для ключевого слова '{keyword.keyword}' добавлена в сессию")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error в process_single_keyword_position для '{keyword.keyword}': {e}", exc_info=True)
+        raise
+
+
+
+def get_region_key_from_keywords(keywords: List[Keyword]) -> Tuple[int, int]:
+    """
+    Из списка ключевых слов ищет первое включенное ключевое слово с регионом,
+    и возвращает (key, index) региона,
+    или значения по умолчанию для Москвы, если не найдено.
+
+    :param keywords: список объектов Keyword с полем region
+    :return: кортеж (region_key, region_index)
+    """
+    for kw in keywords:
+        if kw.is_check and kw.region:
+            result = get_region_key_index_static(kw.region)
+            if result:
+                return result
+    # Значения по умолчанию для Москвы
+    return (213, 1)
+
+
+
+async def process_keyword_wrapper(semaphore, session_db, all_positions_data, kw, domain, project_id,
+                                  failed_keywords_local, region_index, date, topvisor_project_id):
+    async with semaphore:
+        try:
+            logger.info(f"Начинаем обработку ключевого слова '{kw.keyword}'")
+            success = await process_single_keyword_position(session_db, all_positions_data, kw, domain,
+                                                            topvisor_project_id, region_index, date)
+            if not success:
+                logger.warning(f"Позиция не обновлена для ключевого слова '{kw.keyword}'")
+                failed_keywords_local.append((project_id, kw.id))
+            else:
+                logger.info(f"Ключевое слово '{kw.keyword}' обработано успешно")
+        except Exception as e:
+            logger.error(f"Ошибка обработки ключевого слова '{kw.keyword}' в проекте {project_id}: {e}", exc_info=True)
+            failed_keywords_local.append((project_id, kw.id))
+
+
+async def process_all_keywords_together_by_id(
+        session_db: AsyncSession,
+        session_http: aiohttp.ClientSession,
+        project_id: UUID,
+        semaphore: asyncio.Semaphore,
+        region_index: int,
+        date: str,
+        topvisor_project_id: int,
+):
+    # Загружаем проект с ключевыми словами одним запросом
+    result = await session_db.execute(
+        select(Project)
+        .options(selectinload(Project.keywords))
+        .where(Project.id == project_id)
     )
-    previous_position = last_pos.position if last_pos else None
+    project = result.scalar_one_or_none()
+    if not project:
+        logger.error(f"Проект с id={project_id} не найден")
+        return []
 
-    # Вычисление cost и trend (аналогично вашему коду)
-    if position > 10:
-        cost = 0
-    elif 1 <= position <= 3:
-        cost = keyword.price_top_1_3
-    elif 4 <= position <= 5:
-        cost = keyword.price_top_4_5
-    else:
-        cost = keyword.price_top_6_10
-
-    if previous_position is None:
-        trend = TrendEnum.stable
-    elif position < previous_position:
-        trend = TrendEnum.up
-    elif position > previous_position:
-        trend = TrendEnum.down
-    else:
-        trend = TrendEnum.stable
-
-    pos_record = Position(
-        keyword_id=keyword.id,
-        checked_at=datetime.utcnow(),
-        position=position,
-        previous_position=previous_position,
-        cost=cost,
-        trend=trend,
-    )
-    session_db.add(pos_record)
-    session_db.commit()
-
-    return True
-
-
-async def process_all_keywords_together(session_db, session_http, project: Project, semaphore: asyncio.Semaphore):
-    date_today = datetime.utcnow().strftime("%Y-%m-%d")
-    region_key = region_to_lr_code(project.region)  # или keyword.region, если разный для каждого ключа
+    logger.info(
+        f"Начинаем обработку проекта {project.id} с {len(project.keywords)} ключевыми словами для даты {date} и региона {region_index}")
 
     async with semaphore:
-        all_positions_data = await fetch_all_positions(session_http, project.id, region_key, date_today)
+        all_positions_data = await fetch_all_positions(session_http, topvisor_project_id, region_index, date)
 
-    if all_positions_data is None or all_positions_data == []:
-        logger.warning(f"Нет данных позиций от Topvisor для проекта {project.id}")
+    if not all_positions_data:
+        logger.warning(f"Нет данных позиций для проекта {project.id}")
         return [(project.id, kw.id) for kw in project.keywords if kw.is_check]
 
     failed_keywords_local = []
 
+    date_today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    tasks = []
     for kw in project.keywords:
-        if not kw.is_check:
-            continue
-        try:
-            success = process_single_keyword_position(session_db, all_positions_data, kw, project.domain)
-            if not success:
-                failed_keywords_local.append((project.id, kw.id))
-        except Exception as e:
-            logger.error(f"Ошибка при обработке ключевого слова '{kw.keyword}' в проекте {project.id}: {e}")
-            failed_keywords_local.append((project.id, kw.id))
+        if kw.is_check:
+            tasks = [
+                process_keyword_wrapper(
+                    semaphore,
+                    session_db,
+                    all_positions_data,
+                    kw,
+                    project.domain,
+                    project.id,
+                    failed_keywords_local,
+                    region_index,
+                    date_today,
+                    topvisor_project_id
+                )
+                for kw in project.keywords if kw.is_check
+            ]
+    logger.info(f"Запускаем обработку для {len(tasks)} ключевых слов")
+
+    await asyncio.gather(*tasks)
+
+    logger.info(f"Обработка проекта {project.id} завершена, неудачных ключевых слов: {len(failed_keywords_local)}")
 
     return failed_keywords_local
+
+
+async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_id: int, searcher_key: int = 0):
+    url = "https://api.topvisor.com/v2/json/add/positions_2/searchers"
+    headers = {
+        "User-Id": TOPVIZOR_ID,
+        "Authorization": TOPVIZOR_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "project_id": project_id,
+        "searcher_key": searcher_key  # 0 - Яндекс
+    }
+    async with session_http.post(url, json=payload, headers=headers) as resp:
+        if resp.status != 200:
+            logger.error(f"Failed to add searcher {searcher_key} to project {project_id}, status {resp.status}")
+            return None
+        data = await resp.json()
+        logger.info(f"Added searcher {searcher_key} to project {project_id}: {data}")
+        return data
+
+
+async def add_searcher_region(
+        session_http: aiohttp.ClientSession,
+        project_id: int,
+        searcher_key: int,
+        region_key: int,
+        region_lang: str = "ru",
+        region_device: int = 0,
+        region_depth: int = 1,
+        timeout: int = 10
+):
+    url = "https://api.topvisor.com/v2/json/add/positions_2/searchers_regions"
+    headers = {
+        "User-Id": TOPVIZOR_ID,
+        "Authorization": TOPVIZOR_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "project_id": project_id,
+        "searcher_key": searcher_key,
+        "region_key": region_key,
+        "region_lang": region_lang,
+        "region_device": region_device,
+        "region_depth": region_depth,
+    }
+
+    try:
+        async with session_http.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            logging.info(f"Added region {region_key} to project {project_id} for searcher {searcher_key}: {data}")
+            return data
+    except aiohttp.ClientResponseError as e:
+        logging.error(f"Failed to add region {region_key} to project {project_id}. HTTP error: {e.status} {e.message}")
+        raise
+    except asyncio.TimeoutError:
+        logging.error(f"Request timed out when adding region {region_key} to project {project_id}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error adding region {region_key} to project {project_id}: {e}")
+        raise
+
+
+async def wait_for_positions(session_http, project_id, region_key, max_wait=900, interval=30):
+    date_today = datetime.utcnow().strftime("%Y-%m-%d")
+    start_time = datetime.utcnow()
+
+    logger.info("Запрашиваем позиции")
+
+    while (datetime.utcnow() - start_time).total_seconds() < max_wait:
+        keywords_data = await get_positions_topvisor(session_http, project_id, region_key,
+                                                     date_today, searcher_key=0)
+        if keywords_data:
+            # проверяем, есть ли в ключевых словах реальные позиции
+            if all(isinstance(item.get("positionsData"), dict) and len(item["positionsData"]) > 0 for item in
+                   keywords_data):
+                return keywords_data
+
+        logger.info("Данные позиций ещё не готовы, ждем...")
+        await asyncio.sleep(interval)
+
+    logger.warning("Превышено время ожидания получения позиций")
+    return None
+
+
+async def main_task(project_id: UUID):
+    semaphore = asyncio.Semaphore(5)
+
+    async with aiohttp.ClientSession() as session_http:
+        async with AsyncSessionLocal() as session_db:
+            # Получаем проект и ключевые слова из БД
+            result = await session_db.execute(
+                select(Project)
+                .options(selectinload(Project.keywords))
+                .where(Project.id == project_id)
+            )
+            project = result.scalar_one_or_none()
+            if not project:
+                logger.error(f"Проект с id={project_id} не найден")
+                return
+
+            # Получаем кортеж (region_key, region_index) из ключевых слов
+            region_key, region_index = get_region_key_from_keywords(
+                project.keywords)  # Например (213, 1) для Москвы
+
+            topvisor_project_id = project.topvisor_id  # числовой ID в Topvisor
+
+            # Получаем актуальные данные проекта с API Topvisor (например, регионы)
+            data = await get_project_info_by_topvizor(topvisor_project_id)
+            logger.info("Данные проекта с топвизора: %s", data)
+
+            # Добавляем Яндекс в проект (searcher_key=0)
+            await add_searcher_to_project(session_http, topvisor_project_id, searcher_key=0)
+
+            # Добавляем регион поиска в Яндекс
+            # Используем region_key (key региона) при добавлении региона в проект
+            await add_searcher_region(session_http, topvisor_project_id, searcher_key=0, region_key=region_key)
+
+            # Запускаем проверку позиций в Topvisor
+            start_result = await start_topvisor_position_check(session_http, topvisor_project_id)
+            if not start_result:
+                logger.error("Не удалось запустить проверку позиций")
+                return
+
+            logger.info("Проверка позиций запущена, ожидаем результаты...")
+
+            # Ждем готовности данных, при этом используем region_index — индекс региона для запроса позиций
+            positions_data = await wait_for_positions(session_http, topvisor_project_id, region_index)
+            if not positions_data:
+                logger.warning("Данные позиций так и не появились")
+                return
+
+            failed = []
+            date_today = datetime.utcnow().strftime("%Y-%m-%d")
+
+            tasks = [
+                process_keyword_wrapper(
+                    semaphore,
+                    session_db,
+                    positions_data,
+                    kw,
+                    project.domain,
+                    project.id,
+                    failed,
+                    region_index,  # Передаем индекс региона (index)
+                    date_today,
+                    topvisor_project_id
+                )
+                for kw in project.keywords if kw.is_check
+            ]
+            await asyncio.gather(*tasks)
+
+            logger.info(f"Обновление позиций завершено. Неудачных ключевых слов: {len(failed)}")
+
+            # После завершения всех задач коммитим сессию
+            try:
+                await session_db.commit()
+                logger.info(f"Коммит всех позиций проекта {project.id} успешен")
+            except Exception as e:
+                logger.error(f"Ошибка коммита после обработки всех ключей: {e}", exc_info=True)
+                await session_db.rollback()
+
+            return failed

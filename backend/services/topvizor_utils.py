@@ -1,7 +1,9 @@
 import aiohttp
 import os
 from dotenv import load_dotenv
+import logging
 
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 TOPVIZOR_ID = os.getenv('TOPVIZOR_ID')
@@ -31,11 +33,6 @@ async def create_project_in_topvisor(url: str, name: str = None):
             return project_id
 
 
-# Пример вызова:
-# new_project_id = asyncio.run(create_project_in_topvisor("https://example.com", "Example Project"))
-# print("Project created with ID:", new_project_id)
-
-
 async def import_keywords(project_id: int, keywords_list: list):
     '''Создать ключевые слова в проекте'''
     url = "https://api.topvisor.com/v2/json/add/keywords_2/keywords/import"
@@ -58,11 +55,6 @@ async def import_keywords(project_id: int, keywords_list: list):
             data = await resp.json()
             return data
 
-
-# Пример вызова:
-# keywords = ["купить купить ноутбук", "ремонт телефонов", "лучшие смартфоны 2025"]
-# result = asyncio.run(import_keywords(123456, keywords))
-# print(result)
 
 async def add_or_update_keyword_topvisor(project_id: int, keyword: str):
     url = "https://api.topvisor.com/v2/json/add/keywords_2/keywords/import"
@@ -120,7 +112,7 @@ async def delete_project_topvisor(project_id: int):
 
 
 async def update_project_topvisor(project_id: int, update_data: dict):
-    url = "https://api.topvisor.com/v2/json/edit/projects" 
+    url = "https://api.topvisor.com/v2/json/edit/projects"
     headers = {
         "User-Id": TOPVIZOR_ID,
         "Authorization": TOPVIZOR_API_KEY,
@@ -138,3 +130,50 @@ async def update_project_topvisor(project_id: int, update_data: dict):
             if "errors" in data:
                 raise Exception(f"Topvisor API ошибка обновления проекта: {data['errors']}")
             return data
+
+
+async def get_project_info_by_topvizor(topvisor_project_id: int):
+    """получить info по проекту из API Topvisor """
+    url_projects = "https://api.topvisor.com/v2/json/get/projects_2/projects"
+    headers = {
+        "User-Id": TOPVIZOR_ID,
+        "Authorization": TOPVIZOR_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload_projects = {
+        "filters": [
+            {
+                "name": "id",
+                "operator": "EQUALS",
+                "values": [topvisor_project_id]
+            }
+        ],
+        "show_searchers_and_regions": 1
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url_projects, json=payload_projects, headers=headers) as resp:
+            if resp.status != 200:
+                logger.error(f"Ошибка получения данных проекта {topvisor_project_id}: HTTP {resp.status}")
+                return
+            data_projects = await resp.json()
+
+    return data_projects
+
+    # try:
+    #     # 2. Получаем ключевые слова с целевыми URL
+    #     url_keywords = "https://api.topvisor.com/v2/json/get/keywords_2/keywords"
+    #     payload_keywords = {
+    #         "project_id": topvisor_project_id,
+    #         "limit": 10
+    #     }
+    #     async with session_http.post(url_keywords, json=payload_keywords, headers=headers) as resp:
+    #         if resp.status != 200:
+    #             logger.error(f"Ошибка получения ключевых слов проекта {topvisor_project_id}: HTTP {resp.status}")
+    #             return
+    #         data_keywords = await resp.json()
+    #
+    #     logger.debug(f"Ответ API по ключам: {data_keywords}")
+    #
+    # except Exception as e:
+    #     logging.error(f"Error during get project info: {e}")
+    #     raise
