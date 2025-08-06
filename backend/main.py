@@ -7,6 +7,11 @@ from routers.projects_router import router as projects_router
 from routers.auth_router import router as auth_router
 import logging
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 logger = logging.getLogger(__name__)
 
 
