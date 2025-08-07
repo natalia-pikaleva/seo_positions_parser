@@ -236,18 +236,41 @@ export function ExcelLikeTableView({
   }
 
   function getColumnsForDate(dateStr: string): GridColDef[] {
-    return [
-      { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
-      {
-        field: 'position',
-        headerName: `Позиция ${formatDateShort(dateStr)}`,
-        width: 120,
-        type: 'number',
-        headerClassName: 'column-header'
-      },
-      { field: 'cost', headerName: 'Стоимость', width: 130, type: 'number', headerClassName: 'column-header' },
-    ];
-  }
+	  return [
+	    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
+	    {
+	      field: 'position',
+	      headerName: `Позиция ${formatDateShort(dateStr)}`,
+	      width: 120,
+	      type: 'number',
+	      headerClassName: 'column-header',
+	      sortComparator: (v1, v2) => {
+	        // Преобразуем значения в числа, если число, иначе NaN
+	        const n1 = typeof v1 === 'number' ? v1 : NaN;
+	        const n2 = typeof v2 === 'number' ? v2 : NaN;
+
+	        // Если оба числа
+	        if (!isNaN(n1) && !isNaN(n2)) {
+	          return n1 - n2;
+	        }
+	        // Если только первое число
+	        if (!isNaN(n1) && isNaN(n2)) {
+	          // v1 с числом, v2 с "-"
+	          return -1; // v1 должен быть перед v2
+	        }
+	        // Если только второе число
+	        if (isNaN(n1) && !isNaN(n2)) {
+	          // v1 с "-", v2 с числом
+	          return 1; // v1 должен быть после v2
+	        }
+	        // Если оба не числа (оба "-")
+	        return 0;
+	      }
+	    },
+	    { field: 'cost', headerName: 'Стоимость', width: 130, type: 'number', headerClassName: 'column-header' },
+	  ];
+	}
+
 
   // Сформировать строки данных по дате
   const getRowsForDate = (dateStr: string) => {
@@ -274,34 +297,54 @@ export function ExcelLikeTableView({
 
   // Колонки для вкладок с итогами за день
   function getColumnsForDateWithTotal(dateStr: string, totalCost: number): GridColDef[] {
-    return [
-      { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
-      {
-        field: 'position',
-        headerName: `Позиция ${formatDateShort(dateStr)}`,
-        width: 120,
-        type: 'number',
-        headerClassName: 'column-header'
-      },
-      {
-        field: 'cost',
-        headerName: 'Стоимость',
-        width: 130,
-        type: 'number',
-        headerClassName: 'column-header'
-      },
-      {
-        field: 'totalCost',
-        headerName: `Итог за день: ${totalCost}`,
-        width: 150,
-        renderCell: () => null,
-        sortable: false,
-        filterable: false,
-        disableColumnMenu: true,
-        headerClassName: 'summary-column-header'
-      },
-    ];
-  }
+	  return [
+	    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
+	    {
+	      field: 'position',
+	      headerName: `Позиция ${formatDateShort(dateStr)}`,
+	      width: 120,
+	      type: 'number',
+	      headerClassName: 'column-header',
+	      sortComparator: (v1, v2) => {
+	        const n1 = typeof v1 === 'number' ? v1 : NaN;
+	        const n2 = typeof v2 === 'number' ? v2 : NaN;
+
+	        if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
+	        if (!isNaN(n1) && isNaN(n2)) return -1;
+	        if (isNaN(n1) && !isNaN(n2)) return 1;
+	        return 0;
+	      }
+	    },
+	    {
+	      field: 'cost',
+	      headerName: 'Стоимость',
+	      width: 130,
+	      type: 'number',
+	      headerClassName: 'column-header',
+	      sortComparator: (v1, v2) => {
+	        const n1 = typeof v1 === 'number' ? v1 : NaN;
+	        const n2 = typeof v2 === 'number' ? v2 : NaN;
+
+	        if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
+	        if (!isNaN(n1) && isNaN(n2)) return -1;
+	        if (isNaN(n1) && !isNaN(n2)) return 1;
+	        return 0;
+	      }
+	    },
+	    {
+	      field: 'totalCost',
+	      headerName: `Итог за день: ${totalCost}`,
+	      width: 150,
+	      renderCell: () => null,
+	      sortable: false,
+	      filterable: false,
+	      disableColumnMenu: true,
+	      headerClassName: 'summary-column-header'
+	    },
+	  ];
+	}
+
+
 
   // Вертикальные карточки для таба с конкретной датой
   function renderDateCards(dateStr: string) {
@@ -422,55 +465,6 @@ export function ExcelLikeTableView({
 	  setSelectedTab(mergedTabs.length); // "Инфо" - 0, остальные с 1, значит последняя - mergedTabs.length
 	}, [mergedTabs]);
 
-
-
-  // Отрисовка карточек для интервалов - просто список данных
-  {/*function renderIntervalCards(intervalLabel: string) {
-	  const rows = getRowsByInterval(intervalLabel);
-	  const totalSumForInterval = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
-
-	  return (
-	    <div style={{ padding: 8 }}>
-	      <div style={{
-	          fontWeight: 'bold',
-	          fontSize: '1.1rem',
-	          padding: '8px 12px',
-	          marginBottom: 12,
-	          backgroundColor: '#fffdd0',
-	          borderRadius: 8,
-	          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-	          textAlign: 'center'
-	        }}
-	      >
-	        Итого за 2 недели: {totalSumForInterval.toLocaleString('ru-RU')} руб.
-	      </div>
-
-	      {rows.map(row => (
-	        <div
-	          key={row.id}
-	          style={{
-	            border: '1px solid #ccc',
-	            borderRadius: 8,
-	            padding: 12,
-	            marginBottom: 12,
-	            background: '#fff',
-	            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-	          }}
-	        >
-	          <div><strong>№:</strong> {row.serial}</div>
-	          <div><strong>Ключевой запрос:</strong> {row.keyword}</div>
-	          <div><strong>ТОП-3 кол-во:</strong> {row.daysTop3}</div>
-	          <div><strong>Стоимость ТОП-3:</strong> {row.costTop3}</div>
-	          <div><strong>ТОП-5 кол-во:</strong> {row.daysTop5}</div>
-	          <div><strong>Стоимость ТОП-5:</strong> {row.costTop5}</div>
-	          <div><strong>ТОП-10 кол-во:</strong> {row.daysTop10}</div>
-	          <div><strong>Стоимость ТОП-10:</strong> {row.costTop10}</div>
-	          <div><strong>Итог по ключу:</strong> {row.totalCost}</div>
-	        </div>
-	      ))}
-	    </div>
-	  );
-	}*/}
 
   // Функция для склонения
   function declOfNum(number, titles) {
