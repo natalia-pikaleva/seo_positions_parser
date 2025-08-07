@@ -154,6 +154,42 @@ export function ExcelLikeTableView({
 }: ExcelLikeTableViewProps): JSX.Element {
   const isMobile = useMediaQuery('(max-width:600px)');
 
+  type SortMode = 'none' | 'asc' | 'desc';
+  const [sortMode, setSortMode] = useState<SortMode>('none');
+
+  const SortButton = () => {
+	  const labelMap = {
+	    none: 'Сортировка позиций',
+	    asc: 'Сортировка позиций ↑',
+	    desc: 'Сортировка позиций ↓',
+	  };
+
+	  const nextSortMode = (mode: SortMode): SortMode =>
+	    mode === 'none' ? 'asc' : mode === 'asc' ? 'desc' : 'none';
+
+	  return (
+	    <button
+	      style={{
+	        marginBottom: 12,
+	        padding: '8px 16px',
+	        fontSize: '1rem',
+
+	        cursor: 'pointer',
+	        borderRadius: 6,
+	        backgroundColor: '#ea580c',
+	        color: '#fff',
+	        border: 'none',
+	      }}
+	      onClick={() => setSortMode(nextSortMode(sortMode))}
+	      type="button"
+	    >
+	      {labelMap[sortMode]}
+	    </button>
+	  );
+	};
+
+
+
   // Формируем строки для вкладки "Инфо"
   const infoRows = useMemo(() => {
     return keywords.map((k, index) => ({
@@ -350,47 +386,78 @@ export function ExcelLikeTableView({
   function renderDateCards(dateStr: string) {
 	  const totalCost = getTotalCostForDate(dateStr);
 
+	  // Получаем массив карточек с позициями
+	  let cards = keywords.map(k => {
+	    const pos = positions.find(p => p.keyword_id === k.id && formatDate(p.checked_at) === dateStr);
+	    return {
+	      ...k,
+	      position: pos?.position ?? null,
+	      posValue: pos?.position, // для сортировки
+	      cost: pos?.cost ?? '-',
+	    };
+	  });
+
+	  // Сортируем если требуется
+	  if (sortMode === 'asc') {
+	    cards = cards.slice().sort((a, b) => {
+	      if (a.position === null && b.position === null) return 0;
+	      if (a.position === null) return 1;
+	      if (b.position === null) return -1;
+	      return a.position - b.position;
+	    });
+	  } else if (sortMode === 'desc') {
+	    cards = cards.slice().sort((a, b) => {
+	      if (a.position === null && b.position === null) return 0;
+	      if (a.position === null) return 1;
+	      if (b.position === null) return -1;
+	      return b.position - a.position;
+	    });
+	  }
+
 	  return (
-	    <div style={{ padding: 8 }}>
-	      <div style={{
-	          fontWeight: 'bold',
-	          fontSize: '1.1rem',
-	          padding: '8px 12px',
-	          marginBottom: 12,
-	          backgroundColor: '#fffdd0',
-	          borderRadius: 8,
-	          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-	          textAlign: 'center'
-	        }}
-	      >
-	        Итог за {formatDateShort(dateStr)}: {totalCost.toLocaleString('ru-RU')} руб.
-	      </div>
+		  <div style={{ padding: 8 }}>
+		    {/* Контейнер только для кнопки сортировки, кнопка справа */}
+		    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+		      <SortButton />
+		    </div>
 
-	      {keywords.map(k => {
-	        const key = `${k.id}|${dateStr}`;
-	        const pos = positions.find(p => p.keyword_id === k.id && formatDate(p.checked_at) === dateStr);
+		    {/* Заголовок ниже, по центру */}
+		    <div style={{
+		      fontWeight: 'bold',
+		      fontSize: '1.1rem',
+		      padding: '8px 12px',
+		      marginBottom: 12,
+		      backgroundColor: '#fffdd0',
+		      borderRadius: 8,
+		      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+		      textAlign: 'center'
+		    }}>
+		      Итог за {formatDateShort(dateStr)}: {totalCost.toLocaleString('ru-RU')} руб.
+		    </div>
 
-	        return (
-	          <div
-	            key={k.id}
-	            style={{
-	              border: '1px solid #ccc',
-	              borderRadius: 8,
-	              padding: 12,
-	              marginBottom: 12,
-	              background: '#fff',
-	              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-	            }}
-	          >
-	            <div><strong>Ключевой запрос: {k.keyword} </strong></div>
-	            <div>Позиция: {pos?.position ?? '-'}</div>
-	            <div>Стоимость: {pos?.cost ?? '-'}</div>
-	          </div>
-	        );
-	      })}
-	    </div>
-	  );
+		    {/* Карточки */}
+		    {cards.map(k => (
+		      <div
+		        key={k.id}
+		        style={{
+		          border: '1px solid #ccc',
+		          borderRadius: 8,
+		          padding: 12,
+		          marginBottom: 12,
+		          background: '#fff',
+		          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+		        }}
+		      >
+		        <div><strong>Ключевой запрос: {k.keyword} </strong></div>
+		        <div>Позиция: {k.position ?? '-'}</div>
+		        <div>Стоимость: {k.cost ?? '-'}</div>
+		      </div>
+		    ))}
+		  </div>
+		);
+
 	}
+
 
   // Колонки для вкладок с итогами за 14-дневные периоды
   function getColumnsForIntervalWithSummary(totalSum: number): GridColDef[] {

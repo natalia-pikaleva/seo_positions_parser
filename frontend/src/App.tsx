@@ -358,12 +358,6 @@ function App() {
         // Если не авторизован и не клиент — показываем кнопку Войти и/или сообщение
         <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-700">
           <p>Пожалуйста, войдите в систему для доступа к приложению.</p>
-          <button
-            onClick={openAuth}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Войти
-          </button>
         </div>
       )
     )}
