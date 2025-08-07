@@ -170,13 +170,19 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
                         f"Позиция по ключу '{keyword.keyword}' не найдена для даты {date}, ключ запроса: {key_for_date}")
                     return False
 
+                pos_value = pos_info.get("position")
+                if pos_value == "--":
+                    logger.info(f"Позиция равна '--' для ключа '{keyword.keyword}', пропускаем запись")
+                    return False
+
                 try:
-                    position = int(pos_info.get("position"))
+                    position = int(pos_value)
                     logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
                 except (TypeError, ValueError) as e:
                     logger.warning(
-                        f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_info.get('position')}, ошибка: {e}")
+                        f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_value}, ошибка: {e}")
                     return False
+
 
                 break
 
