@@ -276,8 +276,6 @@ function App() {
 		</div>
 
 
-
-
       {/* Модалка регистрации менеджера */}
       {isRegisterModalOpen && (
         <RegisterManagerModal

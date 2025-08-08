@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { BarChart, Users, TrendingUp, Calendar, Plus } from 'lucide-react';
+import { BarChart, Users, TrendingUp, Calendar, Plus, RefreshCw } from 'lucide-react';
 import { Project } from '../types';
+import { API_BASE } from '../utils/config';
 
 interface DashboardProps {
   projects: Project[];
@@ -15,6 +16,46 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
   );
   const activeProjects = projects.length;
 
+  // Состояния для модального окна и статуса задачи
+  const [modalOpen, setModalOpen] = useState(false);
+  const [taskStatus, setTaskStatus] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Функция запроса статуса задачи
+  const fetchTaskStatus = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Запрос без параметра date_str для даты сегодня, можно добавить при необходимости
+      const response = await fetch(`${API_BASE}/task-status/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Ошибка запроса');
+      }
+      const data = await response.json();
+      setTaskStatus(data);
+    } catch (err: any) {
+      setError(err.message || 'Неизвестная ошибка');
+      setTaskStatus(null);
+    } finally {
+      setLoading(false);
+      setModalOpen(true);  // Открываем окно с результатом
+    }
+  };
+
+  // Закрытие модального окна
+  const closeModal = () => {
+    setModalOpen(false);
+    setTaskStatus(null);
+    setError(null);
+  };
+
   return (
     <div className="space-y-6">
       {/* Заголовок + кнопка */}
@@ -26,13 +67,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
 		    <h1 className="text-3xl font-bold text-gray-900">SEO Позиции</h1>
 		    <p className="text-gray-600">Мониторинг позиций сайтов в поисковых системах</p>
 		  </div>
-		  <button
-		    onClick={onCreateProject}
-		    className="w-full sm:w-auto flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-		  >
-		    <Plus className="w-5 h-5" />
-		    Создать проект
-		  </button>
+
+		  <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
+           <button
+             onClick={fetchTaskStatus}
+             className="flex items-center gap-2 px-5 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+           >
+             <RefreshCw className="w-5 h-5" />
+             Проверить статус задачи
+           </button>
+
+           <button
+             onClick={onCreateProject}
+             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+           >
+             <Plus className="w-5 h-5" />
+             Создать проект
+           </button>
+         </div>
 	  </div>
 
 
@@ -138,6 +190,88 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
           )}
         </div>
       </div>
+
+
+    {/* Модальное окно */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={closeModal} // Закрытие по клику на подложку
+        >
+          <div
+            className="bg-white rounded-lg shadow-lg w-11/12 max-w-lg p-6 relative"
+            onClick={e => e.stopPropagation()} // Чтобы клик внутри модального не закрывал его
+          >
+            <button
+              onClick={closeModal}
+              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+              aria-label="Закрыть"
+            >
+              &#10005;
+            </button>
+
+            <h2 className="text-xl font-semibold mb-4">Статус задачи</h2>
+
+            {loading ? (
+			  <p>Загрузка данных...</p>
+			) : error ? (
+			  <p className="text-red-600">Ошибка: {error}</p>
+			) : taskStatus ? (
+			  <div>
+			    <p><b>Статус:</b> {taskStatus.status}</p>
+			    <p><b>Сообщение:</b> {taskStatus.message || 'Нет сообщения'}</p>
+
+			    {/* Пользовательский дружественный вывод при успешном или частично успешном результате */}
+			    {taskStatus.status === 'completed' && taskStatus.result && (
+			      <div className="mt-4 text-sm max-h-60 overflow-auto rounded bg-gray-50 p-3">
+			        {/* Если нет ошибок — показываем сообщение об успешном выполнении */}
+			        {(!taskStatus.result.failed_projects?.length && !taskStatus.result.access_denied_domains?.length) ? (
+			          <p>Все проекты обработаны успешно.</p>
+			        ) : (
+			          <>
+			            {/* Если есть неудачные проекты */}
+			            {taskStatus.result.failed_projects?.length > 0 && (
+			              <div className="mb-3">
+			                <p>Не удалось обновить позиции для следующих проектов:</p>
+			                <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
+			                  {taskStatus.result.failed_projects.map((proj: string, index: number) => (
+			                    <li key={index}>{proj}</li>
+			                  ))}
+			                </ul>
+			              </div>
+			            )}
+
+			            {/* Если есть проекты с доступом отказано */}
+			            {taskStatus.result.access_denied_domains?.length > 0 && (
+			              <div>
+			                <p>Доступ запрещён для следующих проектов:</p>
+			                <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
+			                  {taskStatus.result.access_denied_domains.map((domain: string, index: number) => (
+			                    <li key={index}>{domain}</li>
+			                  ))}
+			                </ul>
+			              </div>
+			            )}
+			          </>
+			        )}
+			      </div>
+			    )}
+
+			    {/* Ошибка выполнения */}
+			    {taskStatus.status === 'failed' && taskStatus.error_message && (
+			      <div className="mt-4 text-red-600 font-medium">
+			        <p>Ошибка выполнения задачи:</p>
+			        <pre>{taskStatus.error_message}</pre>
+			      </div>
+			    )}
+			  </div>
+			) : (
+			  <p>Данных о задаче нет</p>
+			)}
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };

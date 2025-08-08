@@ -1,5 +1,6 @@
 from database.models import Project, Keyword, Position, TrendEnum
 from datetime import datetime
+import json
 from services.celery_app import celery_app
 import os
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from services.topvizor_utils import get_project_info_by_topvizor
+from database.models import TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +185,6 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
                         f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_value}, ошибка: {e}")
                     return False
 
-
                 break
 
         if position is None:
@@ -311,24 +312,22 @@ async def process_all_keywords_together_by_id(
 
     date_today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    tasks = []
-    for kw in project.keywords:
-        if kw.is_check:
-            tasks = [
-                process_keyword_wrapper(
-                    semaphore,
-                    session_db,
-                    all_positions_data,
-                    kw,
-                    project.domain,
-                    project.id,
-                    failed_keywords_local,
-                    region_index,
-                    date_today,
-                    topvisor_project_id
-                )
-                for kw in project.keywords if kw.is_check
-            ]
+    tasks = [
+        process_keyword_wrapper(
+            semaphore,
+            session_db,
+            all_positions_data,
+            kw,
+            project.domain,
+            project.id,
+            failed_keywords_local,
+            region_index,
+            date_today,
+            topvisor_project_id
+        )
+        for kw in project.keywords if kw.is_check
+    ]
+
     logger.info(f"Запускаем обработку для {len(tasks)} ключевых слов")
 
     await asyncio.gather(*tasks)
@@ -458,7 +457,8 @@ async def main_task(project_id: UUID):
                     logger.error(f"Access denied for project info of {project.domain}")
                     return False, "access_denied"
             except Exception as e:
-                logger.error(f"Error getting project info from Topvisor for project {project.domain}: {e}", exc_info=True)
+                logger.error(f"Error getting project info from Topvisor for project {project.domain}: {e}",
+                             exc_info=True)
                 return False, "exception"
 
             try:
@@ -471,7 +471,8 @@ async def main_task(project_id: UUID):
                 return False, "exception"
 
             try:
-                resp = await add_searcher_region(session_http, topvisor_project_id, searcher_key=0, region_key=region_key)
+                resp = await add_searcher_region(session_http, topvisor_project_id, searcher_key=0,
+                                                 region_key=region_key)
                 if has_access_error(resp):
                     logger.error(f"Access denied adding searcher region for project {project.domain}")
                     return False, "access_denied"
@@ -518,7 +519,8 @@ async def main_task(project_id: UUID):
                         topvisor_project_id
                     )
                 except Exception as e:
-                    logger.error(f"Error processing keyword {kw.keyword} for project {project.domain}: {e}", exc_info=True)
+                    logger.error(f"Error processing keyword {kw.keyword} for project {project.domain}: {e}",
+                                 exc_info=True)
                     failed.append((project.id, kw.id))
 
             logger.info(f"Position update completed for {project.domain}. Failed keywords count: {len(failed)}")
@@ -533,13 +535,27 @@ async def main_task(project_id: UUID):
             return True, None
 
 
+@celery_app.task(bind=True)
+def run_main_task(self):
+    return asyncio.run(run_main_task_async(self))
 
-@celery_app.task
-def run_main_task():
+
+async def run_main_task_async(self):
     logger.info(f"START run_main_task: TOPVIZOR_ID={TOPVIZOR_ID}, API_KEY set={bool(TOPVIZOR_API_KEY)}")
+    task_id = self.request.id
 
-    async def process_projects():
-        async with AsyncSessionLocal() as session_db:
+    async with AsyncSessionLocal() as session_db:
+        # Создаём/сохраняем запись о начале задачи
+        task_status = TaskStatus(
+            task_id=task_id,
+            task_name="run_main_task",
+            status="in_progress",
+            started_at=datetime.utcnow()
+        )
+        session_db.add(task_status)
+        await session_db.commit()
+
+        try:
             result = await session_db.execute(
                 select(Project)
                 .options(selectinload(Project.keywords))
@@ -549,7 +565,12 @@ def run_main_task():
 
             if not projects:
                 logger.info("No projects with topvisor_id found for processing.")
-                return "No projects found"
+                # Обновляем статус задачи в базе
+                task_status.status = "completed"
+                task_status.finished_at = datetime.utcnow()
+                task_status.result = {"message": "No projects found"}
+                await session_db.commit()
+                return {"message": "No projects found"}
 
             logger.info(f"Found {len(projects)} projects to process.")
 
@@ -559,7 +580,9 @@ def run_main_task():
             for project in projects:
                 logger.info(f"Start processing project id={project.id}, domain={project.domain}")
                 try:
+                    # ВАЖНО: здесь await, main_task -- async функция
                     success, error = await main_task(project.id)
+
                     if not success:
                         logger.warning(f"Project {project.domain} processing failed with error: {error}")
                         failed.append(str(project.id))
@@ -579,9 +602,26 @@ def run_main_task():
             else:
                 logger.info("All projects processed successfully.")
 
+            # Обновляем статус задачи с результатом
+            task_status.status = "completed"
+            task_status.finished_at = datetime.utcnow()
+            task_status.result = {
+                "failed_projects": failed,
+                "access_denied_domains": access_denied_domains
+            }
+            await session_db.commit()
+
             return {
                 "failed_projects": failed,
                 "access_denied_domains": access_denied_domains
             }
 
-    return asyncio.run(process_projects())
+        except Exception as e:
+            await session_db.rollback()
+            task_status.status = "failed"
+            task_status.finished_at = datetime.utcnow()
+            task_status.error_message = str(e)
+            await session_db.commit()
+
+            logger.error(f"run_main_task failed: {e}", exc_info=True)
+            raise

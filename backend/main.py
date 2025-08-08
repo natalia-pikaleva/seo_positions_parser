@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.db_init import get_db, create_tables
 from routers.projects_router import router as projects_router
 from routers.auth_router import router as auth_router
+from routers.task_status_router import router as task_status_router
+
 import logging
 
 logging.basicConfig(
@@ -35,6 +37,7 @@ app.add_middleware(
 
 app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(task_status_router, prefix="/api/task-status", tags=["tasks"])
 
 
 # Создание таблиц (запускайте один раз)
