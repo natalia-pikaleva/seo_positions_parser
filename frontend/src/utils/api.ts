@@ -278,3 +278,28 @@ export async function disableKeywordCheck(keywordId: string): Promise<void> {
     throw new Error(`Failed to disable keyword check: ${errorText}`);
   }
 }
+
+
+//Запрашивает статус задачи run_main_task на указанную дату
+export async function fetchTaskStatusByDate(dateStr?: string): Promise<any> {
+  // Формируем URL с параметром date_str, если передан
+  let url = `${API_BASE}/task-status/`;
+  if (dateStr) {
+    url += `?date_str=${encodeURIComponent(dateStr)}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch task status: ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}

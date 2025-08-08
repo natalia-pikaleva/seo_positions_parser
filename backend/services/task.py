@@ -15,7 +15,8 @@ from sqlalchemy.orm import selectinload
 import asyncio
 import aiohttp
 from typing import List, Tuple
-
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 logger = logging.getLogger(__name__)
 
 load_dotenv()

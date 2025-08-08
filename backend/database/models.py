@@ -1,7 +1,7 @@
 import enum
 import uuid
 from sqlalchemy import (Column, String, Integer, DateTime, ForeignKey, Enum,
-                        UniqueConstraint, Boolean, BigInteger  )
+                        UniqueConstraint, Boolean, BigInteger, Text, JSON)
 from sqlalchemy.sql import desc
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -88,3 +88,25 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
     is_temporary_password = Column(Boolean, default=True)  # True, если пароль временный
+
+
+class TaskStatusEnum(str, enum.Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    completed = "completed"
+    failed = "failed"
+
+
+class TaskStatus(Base):
+    __tablename__ = "task_status"
+
+    task_id = Column(String(50), primary_key=True)  # Celery task ID
+    task_name = Column(String(100), nullable=False)
+    status = Column(Enum(TaskStatusEnum), default=TaskStatusEnum.pending, nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    result = Column(JSON, nullable=True)  # можно хранить результат задачи в виде JSON-объекта
+    error_message = Column(Text, nullable=True)
+
+    def __repr__(self):
+        return f"<TaskStatus(task_id={self.task_id}, status={self.status})>"
