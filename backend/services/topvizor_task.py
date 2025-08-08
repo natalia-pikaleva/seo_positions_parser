@@ -421,6 +421,40 @@ async def wait_for_positions(session_http, project_id, region_key, max_wait=900,
     return None
 
 
+async def get_or_start_positions(session_http: aiohttp.ClientSession, project_id: int, region_index: int, date: str):
+    try:
+        logger.info(f"Проверяем наличие позиций за {date} для проекта {project_id}")
+        positions = await get_positions_topvisor(session_http, project_id, region_index, date, searcher_key=0)
+
+        if positions and all(
+                isinstance(item.get("positionsData"), dict) and len(item["positionsData"]) > 0 for item in positions):
+            logger.info(f"Позиции за {date} найдены на Topvisor для проекта {project_id}")
+            return positions
+
+        logger.info(f"Позиции за {date} отсутствуют. Запускаем процесс снятия позиций для проекта {project_id}")
+        start_resp = await start_topvisor_position_check(session_http, project_id)
+        if not start_resp:
+            logger.error("Не удалось запустить снятие позиций в Topvisor")
+            return None
+
+        positions = await wait_for_positions(session_http, project_id, region_index)
+        if positions:
+            logger.info(f"Позиции получены после запуска снятия для проекта {project_id}")
+            return positions
+        else:
+            logger.warning(f"Позиции не получили после запуска снятия для проекта {project_id}")
+            return None
+
+    except aiohttp.ClientError as e:
+        logger.error(f"HTTP ошибка при работе с Topvisor для проекта {project_id}: {e}", exc_info=True)
+    except asyncio.TimeoutError:
+        logger.error(f"Timeout при работе с Topvisor для проекта {project_id}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка в get_or_start_positions для проекта {project_id}: {e}", exc_info=True)
+
+    return None
+
+
 async def main_task(project_id: UUID):
     semaphore = asyncio.Semaphore(1)  # Последовательная обработка ключевых слов
 
@@ -480,22 +514,12 @@ async def main_task(project_id: UUID):
                 logger.error(f"Error adding searcher region to project {project.domain}: {e}", exc_info=True)
                 return False, "exception"
 
-            try:
-                start_result = await start_topvisor_position_check(session_http, topvisor_project_id)
-                logger.info(f"Position check start response for project {project.domain}: {start_result}")
-                if not start_result:
-                    logger.error(f"Failed to start position check for project {project.domain}")
-                    return False, "start_failed"
-                if has_access_error(start_result):
-                    logger.error(f"Access denied starting position check for project {project.domain}")
-                    return False, "access_denied"
-            except Exception as e:
-                logger.error(f"Error starting position check for project {project.domain}: {e}", exc_info=True)
-                return False, "exception"
+            date_today = datetime.utcnow().strftime("%Y-%m-%d")
+            positions_data = await get_or_start_positions(session_http, topvisor_project_id, region_index, date_today)
+            if not positions_data:
+                logger.warning(f"Positions data not ready for project {project.domain}")
+                return False, "positions_not_ready"
 
-            logger.info(f"Waiting for positions data for project {project.domain}")
-
-            positions_data = await wait_for_positions(session_http, topvisor_project_id, region_index)
             if not positions_data:
                 logger.warning(f"Positions data not ready for project {project.domain}")
                 return False, "positions_not_ready"
@@ -580,7 +604,6 @@ async def run_main_task_async(self):
             for project in projects:
                 logger.info(f"Start processing project id={project.id}, domain={project.domain}")
                 try:
-                    # ВАЖНО: здесь await, main_task -- async функция
                     success, error = await main_task(project.id)
 
                     if not success:
