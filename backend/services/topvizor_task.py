@@ -35,6 +35,19 @@ engine = create_async_engine(DATABASE_URL_ASYNC)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+async def retry_request(session_http, url, json_payload, headers, max_retries=5, delay=20):
+    for attempt in range(max_retries):
+        try:
+            async with session_http.post(url, json=json_payload, headers=headers) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except (aiohttp.ClientConnectorError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+            else:
+                raise e
+
+
 async def start_topvisor_position_check(session_http: aiohttp.ClientSession, topvisor_project_id: int):
     url = "https://api.topvisor.com/v2/json/edit/positions_2/checker/go"
     headers = {
@@ -47,12 +60,9 @@ async def start_topvisor_position_check(session_http: aiohttp.ClientSession, top
     }
     logger.info(f"Starting position check for project {topvisor_project_id} with payload: {payload}")
     try:
-        async with session_http.post(url, json=payload, headers=headers) as resp:
-            logger.info(f"Response status: {resp.status} for start_topvisor_position_check")
-            resp.raise_for_status()
-            data = await resp.json()
-            logger.info(f"Position check response data: {data}")
-            return data
+        data = await retry_request(session_http, url, payload, headers, max_retries=5, delay=20)
+        logger.info(f"Position check response data: {data}")
+        return data
     except Exception as e:
         logger.error(f"Exception in start_topvisor_position_check for project {topvisor_project_id}: {e}",
                      exc_info=True)
@@ -60,8 +70,12 @@ async def start_topvisor_position_check(session_http: aiohttp.ClientSession, top
 
 
 async def get_positions_topvisor(session_http: aiohttp.ClientSession,
-                                 project_id: int, region_key: int,
-                                 date: str, searcher_key: int):
+                                 project_id: int,
+                                 region_key: int,
+                                 date: str,
+                                 searcher_key: int,
+                                 max_retries: int = 5,
+                                 delay: int = 20):
     url = "https://api.topvisor.com/v2/json/get/positions_2/history"
     headers = {
         "User-Id": TOPVIZOR_ID,
@@ -71,22 +85,21 @@ async def get_positions_topvisor(session_http: aiohttp.ClientSession,
     payload = {
         "project_id": project_id,
         "regions_indexes": [region_key],
-        "searcher_keys": [searcher_key],  # укажите нужный searcher, например Яндекс
+        "searcher_keys": [searcher_key],  # например, Яндекс
         "dates": [date],
         "show_headers": True,
         "show_tops": True
     }
     logger.info(
-        f"Запрос в Topvisor: project_id={project_id}, searcher_keys={[searcher_key]}, regions_indexes={[region_key]}, date1={date}, date2={date}"
+        f"Запрос в Topvisor: project_id={project_id}, searcher_keys={[searcher_key]}, "
+        f"regions_indexes={[region_key]}, date1={date}, date2={date}"
     )
 
-    async with session_http.post(url, json=payload, headers=headers) as resp:
-        if resp.status != 200:
-            logger.error(f"Topvisor API вернул статус {resp.status} для проекта {project_id}")
-            return None
-
-        data = await resp.json()
-        logger.info(f"Topvisor API ответ: {data}")
+    try:
+        data = await retry_request(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
+    except Exception as e:
+        logger.error(f"Ошибка запроса позиций Topvisor для проекта {project_id}: {e}", exc_info=True)
+        return None
 
     if "errors" in data:
         logger.error(f"Topvisor API ошибки для проекта {project_id}: {data['errors']}")
@@ -102,6 +115,7 @@ async def get_positions_topvisor(session_http: aiohttp.ClientSession,
         logger.warning(f"Topvisor API result не содержит keywords для проекта {project_id}")
         return []
 
+    logger.info(f"Topvisor API ответ успешно обработан для проекта {project_id}")
     return keywords
 
 
@@ -337,7 +351,8 @@ async def process_all_keywords_together_by_id(
     return failed_keywords_local
 
 
-async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_id: int, searcher_key: int = 0):
+async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_id: int, searcher_key: int = 0,
+                                  max_retries: int = 5, delay: int = 20):
     url = "https://api.topvisor.com/v2/json/add/positions_2/searchers"
     headers = {
         "User-Id": TOPVIZOR_ID,
@@ -348,13 +363,17 @@ async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_i
         "project_id": project_id,
         "searcher_key": searcher_key  # 0 - Яндекс
     }
-    async with session_http.post(url, json=payload, headers=headers) as resp:
-        if resp.status != 200:
-            logger.error(f"Failed to add searcher {searcher_key} to project {project_id}, status {resp.status}")
-            return None
-        data = await resp.json()
+    try:
+        data = await retry_request(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
         logger.info(f"Added searcher {searcher_key} to project {project_id}: {data}")
+        if data is None or (isinstance(data, dict) and data.get("errors")):
+            logger.error(
+                f"Failed to add searcher {searcher_key} to project {project_id}, response errors: {data.get('errors') if data else 'No data'}")
+            return None
         return data
+    except Exception as e:
+        logger.error(f"Exception in add_searcher_to_project for project {project_id}: {e}", exc_info=True)
+        return None
 
 
 async def add_searcher_region(
@@ -365,8 +384,9 @@ async def add_searcher_region(
         region_lang: str = "ru",
         region_device: int = 0,
         region_depth: int = 1,
-        timeout: int = 10
-):
+        timeout: int = 10,
+        max_retries: int = 5,
+        delay: int = 20):
     url = "https://api.topvisor.com/v2/json/add/positions_2/searchers_regions"
     headers = {
         "User-Id": TOPVIZOR_ID,
@@ -383,19 +403,40 @@ async def add_searcher_region(
     }
 
     try:
-        async with session_http.post(url, json=payload, headers=headers, timeout=timeout) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            logging.info(f"Added region {region_key} to project {project_id} for searcher {searcher_key}: {data}")
-            return data
+        # Используем retry_request с таймаутом оберткой aiohttp.ClientTimeout
+        timeout_obj = aiohttp.ClientTimeout(total=timeout)
+
+        for attempt in range(max_retries):
+            try:
+                async with session_http.post(url, json=payload, headers=headers, timeout=timeout_obj) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    logger.info(
+                        f"Added region {region_key} to project {project_id} for searcher {searcher_key}: {data}")
+                    if data is None or (isinstance(data, dict) and data.get("errors")):
+                        logger.error(
+                            f"Response errors when adding region {region_key} to project {project_id}: {data.get('errors')}")
+                        # Решаем, хотим ли повторять при ошибках api или возвратить None
+                        # Здесь остановимся и вернем None
+                        return None
+                    return data
+            except (aiohttp.ClientConnectorError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed for adding region {region_key} to project {project_id}: {e}. Retrying after {delay}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"Failed after {max_retries} attempts adding region {region_key} to project {project_id}: {e}")
+                    raise
     except aiohttp.ClientResponseError as e:
-        logging.error(f"Failed to add region {region_key} to project {project_id}. HTTP error: {e.status} {e.message}")
+        logger.error(f"Failed to add region {region_key} to project {project_id}. HTTP error: {e.status} {e.message}")
         raise
     except asyncio.TimeoutError:
-        logging.error(f"Request timed out when adding region {region_key} to project {project_id}")
+        logger.error(f"Request timed out when adding region {region_key} to project {project_id}")
         raise
     except Exception as e:
-        logging.error(f"Unexpected error adding region {region_key} to project {project_id}: {e}")
+        logger.error(f"Unexpected error adding region {region_key} to project {project_id}: {e}")
         raise
 
 
