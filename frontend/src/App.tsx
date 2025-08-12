@@ -48,11 +48,10 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => {
+  useEffect(() => { //
 	  const init = async () => {
 	    setLoading(true);
 	    setError(null);
-
 	    try {
 	      const savedToken = localStorage.getItem('token');
 	      if (savedToken) {
@@ -76,7 +75,7 @@ function App() {
 	        const project = await fetchClientProjectByLink(clientLink);
 	        setSelectedProject(project);
 	        setIsClientAccess(true);
-	        setCurrentView('projectGroups');
+	        setCurrentView('positionTable'); // <== здесь важное изменение
 	      } else {
 	        setIsClientAccess(false);
 	        const list = await fetchProjects();
@@ -95,6 +94,7 @@ function App() {
 
 	  init();
 	}, []);
+
 
 
   // Модалки регистрации и смены пароля
@@ -220,52 +220,52 @@ function App() {
     }
   };
 
-  useEffect(() => {
-	  async function init() {
-	    setLoading(true);
-	    setError(null);
-
-	    try {
-	      const savedToken = localStorage.getItem('token');
-	      if (savedToken) {
-	        const decoded = jwtDecode<JwtPayload>(savedToken);
-	        const now = Date.now() / 1000;
-	        if (decoded.exp && decoded.exp > now) {
-	          setAuthToken(savedToken);
-	          setUserRole(decoded.role);
-	        } else {
-	          localStorage.removeItem('token');
-	          setAuthToken(null);
-	          setUserRole(null);
-	        }
-	      }
-
-	      const pathSegments = window.location.pathname.split('/');
-	      const clientIndex = pathSegments.indexOf('client');
-
-	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
-	        const clientLink = pathSegments[clientIndex + 1];
-	        const project = await fetchClientProjectByLink(clientLink);
-	        setSelectedProject(project);
-	        setIsClientAccess(true);
-	        setCurrentView('projectGroups');
-	      } else {
-	        setIsClientAccess(false);
-	        const list = await fetchProjects();
-	        setProjects(list);
-	        setCurrentView('dashboard');
-	      }
-	    } catch (e) {
-	      console.error(e);
-	      setError('Ошибка загрузки данных');
-	      setCurrentView('dashboard');
-	    } finally {
-	      setLoading(false);
-	    }
-	  }
-
-	  init();
-	}, []);
+//   useEffect(() => {
+// 	  async function init() {
+// 	    setLoading(true);
+// 	    setError(null);
+//
+// 	    try {
+// 	      const savedToken = localStorage.getItem('token');
+// 	      if (savedToken) {
+// 	        const decoded = jwtDecode<JwtPayload>(savedToken);
+// 	        const now = Date.now() / 1000;
+// 	        if (decoded.exp && decoded.exp > now) {
+// 	          setAuthToken(savedToken);
+// 	          setUserRole(decoded.role);
+// 	        } else {
+// 	          localStorage.removeItem('token');
+// 	          setAuthToken(null);
+// 	          setUserRole(null);
+// 	        }
+// 	      }
+//
+// 	      const pathSegments = window.location.pathname.split('/');
+// 	      const clientIndex = pathSegments.indexOf('client');
+//
+// 	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
+// 	        const clientLink = pathSegments[clientIndex + 1];
+// 	        const project = await fetchClientProjectByLink(clientLink);
+// 	        setSelectedProject(project);
+// 	        setIsClientAccess(true);
+// 	        setCurrentView('projectGroups');
+// 	      } else {
+// 	        setIsClientAccess(false);
+// 	        const list = await fetchProjects();
+// 	        setProjects(list);
+// 	        setCurrentView('dashboard');
+// 	      }
+// 	    } catch (e) {
+// 	      console.error(e);
+// 	      setError('Ошибка загрузки данных');
+// 	      setCurrentView('dashboard');
+// 	    } finally {
+// 	      setLoading(false);
+// 	    }
+// 	  }
+//
+// 	  init();
+// 	}, []);
 
   // Выход из системы
   const handleLogout = () => {
@@ -398,16 +398,18 @@ function App() {
 			/>
         )}
 
-        {currentView === 'positionTable' && selectedProject && selectedGroup && (
-          <div className="space-y-6 max-w-7xl mx-auto">
-            <button
-              onClick={handleBackToProjectGroups}
-              className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
-            >
-              ← Назад к группам
-            </button>
-            <PositionTable
-			    group={selectedGroup}
+        {currentView === 'positionTable' && selectedProject && (
+			  <div className="space-y-6 max-w-7xl mx-auto">
+			    {!isClientAccess && selectedGroup && (
+			      <button
+			        onClick={handleBackToProjectGroups}
+			        className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
+			      >
+			        ← Назад к группам
+			      </button>
+			    )}
+			    <PositionTable
+			      group={isClientAccess ? selectedProject.groups[0] || null : selectedGroup}
 			    onGroupLoaded={(updatedGroup) => {
 			      // Формируем обновлённый проект с новой группой
 			      handleProjectGroupLoaded({
@@ -426,8 +428,8 @@ function App() {
 			      });
 			    }}
 			    isClientView={isClientAccess}
-			    domain={selectedProject.domain}
-			    groups={selectedProject.groups}
+		        domain={selectedProject.domain}
+		        groups={selectedProject.groups}
 			  />
           </div>
         )}

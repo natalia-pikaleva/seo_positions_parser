@@ -108,6 +108,131 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  const [parsing, setParsing] = useState(false);
       const [parsingMsg, setParsingMsg] = useState<string | null>(null);
 
+
+
+
+      // Объединяем ключевые слова из всех групп в один массив при клиентском режиме:
+      const aggregatedKeywords = useMemo(() => {
+	    if (!isClientView || !groups || groups.length === 0) return group.keywords || [];
+
+	    const keywordsMap: Record<string, typeof groups[0]['keywords'][0]> = {};
+	    groups.forEach(g => {
+	      g.keywords.forEach(k => {
+	        keywordsMap[k.id] = k;
+	      });
+	    });
+	    return Object.values(keywordsMap);
+	  }, [isClientView, groups, group.keywords]);
+
+	  // Формируем агрегированную "группу" для рендера
+	  const aggregatedGroup = useMemo(() => {
+	    if (!isClientView) return group;
+
+	    const firstGroup = groups && groups.length > 0 ? groups[0] : null;
+
+	    return {
+	      ...firstGroup,
+	      id: 0, // произвольный id
+	      keywords: aggregatedKeywords,
+	    } as Group;
+	  }, [isClientView, groups, aggregatedKeywords, group]);
+
+	  const displayGroup = isClientView ? aggregatedGroup : editableGroup;
+
+	  useEffect(() => {
+        async function loadPositions() {
+	      if (isClientView && groups && groups.length > 0) {
+	        try {
+	          const results = await Promise.all(
+	            groups.map(g => fetchPositions(g.id, filter.period, periodOffset))
+	          );
+	          setPositions(results.flat());
+	        } catch (error) {
+	          console.error('Ошибка загрузки позиций для клиента', error);
+	          setPositions([]);
+	        }
+	      } else if (group?.id) {
+	        try {
+	          const data = await fetchPositions(group.id, filter.period, periodOffset);
+	          setPositions(data);
+	        } catch (error) {
+	          console.error('Ошибка загрузки позиций', error);
+	          setPositions([]);
+	        }
+	      }
+	    }
+	    loadPositions();
+	  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
+
+	  async function loadIntervalSums() {
+	    if (isClientView && groups && groups.length > 0) {
+	      try {
+	        const results = await Promise.all(
+	          groups.map(g => fetchPositionsIntervals(g.id, filter.period, periodOffset))
+	        );
+
+	        const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
+
+	        results.forEach(data => {
+	          data.forEach(({ keyword_id, intervals }) => {
+	            if (!sumsMap[keyword_id]) sumsMap[keyword_id] = {};
+	            intervals.forEach(interval => {
+	              const label = `${interval.start_date} - ${interval.end_date}`;
+	              sumsMap[keyword_id][label] = {
+	                daysTop3: interval.days_top3 ?? 0,
+	                costTop3: interval.cost_top3 ?? 0,
+	                daysTop5: interval.days_top5 ?? 0,
+	                costTop5: interval.cost_top5 ?? 0,
+	                daysTop10: interval.days_top10 ?? 0,
+	                costTop10: interval.cost_top10 ?? 0,
+	                sumCost: interval.sum_cost ?? 0,
+	              };
+	            });
+	          });
+	        });
+
+	        setIntervalSums(sumsMap);
+	      } catch (error) {
+	        console.error('Ошибка загрузки интервалов для клиента:', error);
+	        setIntervalSums({});
+	      }
+	    } else if (group?.id) {
+		    // Твоя текущая реализация для одной группы:
+		    try {
+		      const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
+
+		      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
+
+		      data.forEach(({ keyword_id, intervals }) => {
+		        sumsMap[keyword_id] = {};
+		        intervals.forEach((interval) => {
+		          const label = `${interval.start_date} - ${interval.end_date}`;
+		          sumsMap[keyword_id][label] = {
+		            daysTop3: interval.days_top3 ?? 0,
+		            costTop3: interval.cost_top3 ?? 0,
+		            daysTop5: interval.days_top5 ?? 0,
+		            costTop5: interval.cost_top5 ?? 0,
+		            daysTop10: interval.days_top10 ?? 0,
+		            costTop10: interval.cost_top10 ?? 0,
+		            sumCost: interval.sum_cost ?? 0,
+		          };
+		        });
+		      });
+
+		      setIntervalSums(sumsMap);
+		    } catch (error) {
+		      console.error('Ошибка загрузки интервалов:', error);
+		      setIntervalSums({});
+		    }
+		  }
+		}
+
+
+	  useEffect(() => {
+	    loadIntervalSums();
+	  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
+
+
 	  const dates = useMemo(() => {
 		  if (filter.period === 'week') {
 		    return getDatesForPeriod('week', periodOffset);
@@ -145,22 +270,12 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 		}, [filter.period, groupCreatedAt, dates]);
 
   useEffect(() => {
-	  setEditableGroup(group);
-	}, [group]);
+	  if (!isClientView) {
+	    setEditableGroup(group);
+	  }
+	}, [group, isClientView]);
 
-	// Загрузка позиций
-  useEffect(() => {
-    if (!group?.id) return;
-    async function loadPositions() {
-      try {
-        const data = await fetchPositions(group.id, filter.period, periodOffset);
-        setPositions(data);
-      } catch (error) {
-        console.error('Ошибка загрузки позиций', error);
-      }
-    }
-    loadPositions();
-  }, [group?.id, filter.period, periodOffset]);
+
 
   interface IntervalSumData {
 	  daysTop3: number;
@@ -171,77 +286,6 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  costTop10: number;
 	  sumCost: number;
 	}
-
-  // Загрузка агрегированных сумм по интервалам
-  async function loadIntervalSums() {
-	  if (!group?.id) return;
-
-	  try {
-	    const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
-
-	    interface IntervalSumData {
-	      daysTop3: number;
-	      costTop3: number;
-	      daysTop5: number;
-	      costTop5: number;
-	      daysTop10: number;
-	      costTop10: number;
-	      sumCost: number;
-	    }
-
-	    const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
-
-	    data.forEach(({ keyword_id, intervals }) => {
-	      sumsMap[keyword_id] = {};
-	      intervals.forEach((interval) => {
-	        const label = `${interval.start_date} - ${interval.end_date}`;
-	        sumsMap[keyword_id][label] = {
-	          daysTop3: interval.days_top3 ?? 0,
-	          costTop3: interval.cost_top3 ?? 0,
-	          daysTop5: interval.days_top5 ?? 0,
-	          costTop5: interval.cost_top5 ?? 0,
-	          daysTop10: interval.days_top10 ?? 0,
-	          costTop10: interval.cost_top10 ?? 0,
-	          sumCost: interval.sum_cost ?? 0,
-	        };
-	      });
-	    });
-
-	    setIntervalSums(sumsMap);
-
-	    // Формируем массив интервалов с датами из первого ключевого слова (если оно есть)
-	    if (data.length > 0) {
-	      const intervalsGroups = data[0].intervals.map(interval => {
-	        const start = new Date(interval.display_start_date);
-	        const end = new Date(interval.display_end_date);
-	        const dates: Date[] = [];
-	        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-	          dates.push(new Date(d));
-	        }
-	        return {
-	          dates,
-	          startDate: interval.start_date,
-	          endDate: interval.end_date,
-	          display_start_date: interval.display_start_date,
-	          display_end_date: interval.display_end_date,
-	          label: `${interval.start_date} - ${interval.end_date}`,  // Добавьте, если нужно использовать
-	          displayLabel: `${start.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})} - ${end.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})}`
-	        };
-	      }).filter(group => group.dates.length > 0);
-
-	      setServerIntervals(intervalsGroups);
-	    } else {
-	      setServerIntervals([]);
-	    }
-	  } catch (error) {
-	    console.error('Ошибка загрузки интервалов:', error);
-	    setServerIntervals([]);
-	  }
-	}
-
-	useEffect(() => {
-	  loadIntervalSums();
-	}, [group?.id, filter.period, periodOffset]);
 
 
   // Вычисление последнего дня месяца с учётом periodOffset
@@ -321,10 +365,11 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 
   // Фильтрация ключевых слов
   const filteredKeywords = useMemo(() => {
-    return editableGroup.keywords.filter(k =>
-      k.keyword.toLowerCase().includes(keywordFilter.toLowerCase())
-    );
-  }, [editableGroup.keywords, keywordFilter]);
+    return displayGroup.keywords.filter(k =>
+	    k.keyword.toLowerCase().includes(keywordFilter.toLowerCase())
+	  );
+	}, [displayGroup.keywords, keywordFilter]);
+
 
   // Подсчёт статистики для PositionStats
   const uniqueKeywordsWithTop1to3 = useMemo(() => {
@@ -366,10 +411,14 @@ console.log('dateGroups:', extendedDateGroups);
 		    <BarChart3 className="w-6 h-6 text-blue-600" />
             <div>
 		      <h2 className="text-2xl font-bold text-gray-900 flex flex-wrap items-center gap-2">
-			    <span>{domain}</span>
-			    <span className="hidden sm:inline text-gray-500">•</span>
-			    <span className="w-full sm:w-auto">{editableGroup.title}</span>
-			  </h2>
+		        <span>{domain}</span>
+			      { !isClientView && (
+			        <>
+			          <span className="hidden sm:inline text-gray-500">•</span>
+			          <span className="w-full sm:w-auto">{editableGroup.title}</span>
+			        </>
+			      )}
+		      </h2>
 
 
 		      <p className="text-gray-600">{editableGroup.searchEngine}
@@ -418,11 +467,11 @@ console.log('dateGroups:', extendedDateGroups);
         {/* Таблица данных в виде Эксель */}
         <div className="flex-shrink-0 h-1/2 min-h-0 overflow-auto">
 	        <ExcelLikeTableView
-			  domain={editableGroup.domain}
-			  positions={positions}
-			  keywords={editableGroup.keywords}
-			  intervalSums={intervalSums}
-			  dateGroups={extendedDateGroups}
+			  domain={displayGroup.domain}
+		      positions={positions}
+		      keywords={displayGroup.keywords}
+		      intervalSums={intervalSums}
+		      dateGroups={extendedDateGroups}
 			/>
 		</div>
 
