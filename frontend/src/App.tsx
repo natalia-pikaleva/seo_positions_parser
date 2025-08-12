@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import * as jwt_decode from 'jwt-decode';
+import { jwtDecode } from 'jwt-decode';
 
 import { Dashboard } from './components/Dashboard';
 import { ProjectForm } from './components/ProjectForm';
@@ -46,69 +46,63 @@ function App() {
   const [isTemporaryPassword, setIsTemporaryPassword] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+	  const init = async () => {
+	    setLoading(true);
+	    setError(null);
+
+	    try {
+	      const savedToken = localStorage.getItem('token');
+	      if (savedToken) {
+	        const decoded = jwtDecode<JwtPayload>(savedToken);
+	        const now = Date.now() / 1000;
+	        if (decoded.exp && decoded.exp > now) {
+	          setAuthToken(savedToken);
+	          setUserRole(decoded.role);
+	        } else {
+	          localStorage.removeItem('token');
+	          setAuthToken(null);
+	          setUserRole(null);
+	        }
+	      }
+
+	      const pathSegments = window.location.pathname.split('/');
+	      const clientIndex = pathSegments.indexOf('client');
+
+	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
+	        const clientLink = pathSegments[clientIndex + 1];
+	        const project = await fetchClientProjectByLink(clientLink);
+	        setSelectedProject(project);
+	        setIsClientAccess(true);
+	        setCurrentView('projectGroups');
+	      } else {
+	        setIsClientAccess(false);
+	        const list = await fetchProjects();
+	        setProjects(list);
+	        setCurrentView('dashboard');
+	      }
+	    } catch (e) {
+	      console.error(e);
+	      setError('Ошибка загрузки данных');
+	      setCurrentView('dashboard');
+	    } finally {
+	      setLoading(false);
+	      setAuthLoading(false);
+	    }
+	  };
+
+	  init();
+	}, []);
+
+
   // Модалки регистрации и смены пароля
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [registerSuccessUsername, setRegisterSuccessUsername] = useState<string | null>(null);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   const [isClientAccess, setIsClientAccess] = useState(false);
-
-  // Восстановление авторизации и загрузка данных при монтировании
-  useEffect(() => {
-    const restoreAuthFromStorage = () => {
-      const savedToken = localStorage.getItem('token');
-      if (!savedToken) return null;
-
-      try {
-        const decoded = jwt_decode<JwtPayload>(savedToken);
-        const now = Date.now() / 1000;
-        if (decoded.exp && decoded.exp > now) {
-          setAuthToken(savedToken);
-          setUserRole(decoded.role);
-          return savedToken;
-        } else {
-          localStorage.removeItem('token');
-          return null;
-        }
-      } catch {
-        localStorage.removeItem('token');
-        return null;
-      }
-    };
-
-    restoreAuthFromStorage();
-
-    async function loadData() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const pathSegments = window.location.pathname.split('/');
-        const clientIndex = pathSegments.indexOf('client');
-
-        if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
-          const clientLink = pathSegments[clientIndex + 1];
-          const project = await fetchClientProjectByLink(clientLink);
-          setSelectedProject(project);
-          setIsClientAccess(true);
-          setCurrentView('projectGroups');
-        } else {
-          setIsClientAccess(false);
-          const list = await fetchProjects();
-          setProjects(list);
-          setCurrentView('dashboard');
-        }
-      } catch (e) {
-        console.error(e);
-        setError('Ошибка загрузки данных');
-        setCurrentView('dashboard');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, []);
 
   // Обработчик выбора проекта
   const handleSelectProject = useCallback(async (project: Project) => {
@@ -215,7 +209,7 @@ function App() {
     localStorage.setItem('token', token);
 
     try {
-      const decoded = jwt_decode<JwtPayload>(token);
+      const decoded = jwtDecode<JwtPayload>(token);
       setUserRole(decoded.role);
     } catch {
       setUserRole(null);
@@ -225,6 +219,53 @@ function App() {
       setShowChangePasswordModal(true);
     }
   };
+
+  useEffect(() => {
+	  async function init() {
+	    setLoading(true);
+	    setError(null);
+
+	    try {
+	      const savedToken = localStorage.getItem('token');
+	      if (savedToken) {
+	        const decoded = jwtDecode<JwtPayload>(savedToken);
+	        const now = Date.now() / 1000;
+	        if (decoded.exp && decoded.exp > now) {
+	          setAuthToken(savedToken);
+	          setUserRole(decoded.role);
+	        } else {
+	          localStorage.removeItem('token');
+	          setAuthToken(null);
+	          setUserRole(null);
+	        }
+	      }
+
+	      const pathSegments = window.location.pathname.split('/');
+	      const clientIndex = pathSegments.indexOf('client');
+
+	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
+	        const clientLink = pathSegments[clientIndex + 1];
+	        const project = await fetchClientProjectByLink(clientLink);
+	        setSelectedProject(project);
+	        setIsClientAccess(true);
+	        setCurrentView('projectGroups');
+	      } else {
+	        setIsClientAccess(false);
+	        const list = await fetchProjects();
+	        setProjects(list);
+	        setCurrentView('dashboard');
+	      }
+	    } catch (e) {
+	      console.error(e);
+	      setError('Ошибка загрузки данных');
+	      setCurrentView('dashboard');
+	    } finally {
+	      setLoading(false);
+	    }
+	  }
+
+	  init();
+	}, []);
 
   // Выход из системы
   const handleLogout = () => {
@@ -251,9 +292,10 @@ function App() {
     setRegisterSuccessUsername(username);
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Загрузка...</div>;
-  }
+  if (loading || authLoading) {
+	  return <div className="text-center py-8">Загрузка...</div>;
+	}
+
 
   if (error) {
     return <div className="text-center py-8 text-red-600">{error}</div>;
@@ -281,6 +323,8 @@ function App() {
 
   // Основной рендер — хедер всегда + условно содержимое
   return (
+
+
     <div className="min-h-screen bg-gray-50">
       {/* Хедер */}
       <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 p-4 max-w-7xl mx-auto">
