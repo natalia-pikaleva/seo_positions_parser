@@ -173,6 +173,4 @@ async def create_new_group_for_all_projects(db: AsyncSession):
 
 @app.get("/api/")
 async def api_root(db: AsyncSession = Depends(get_db)):
-    await create_new_group_for_all_projects(db)
-
-    return {"message": "Группы созданы"}
+    return {"message": "ОК"}
