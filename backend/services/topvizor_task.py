@@ -1,4 +1,4 @@
-from database.models import Project, Keyword, Position, TrendEnum
+from database.models import Project, Keyword, Position, TrendEnum, Group
 from datetime import datetime
 import json
 from services.celery_app import celery_app
@@ -13,7 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from services.topvizor_utils import get_project_info_by_topvizor
+from services.topvizor_utils import (get_project_info_by_topvizor,
+                                     add_searcher_region,
+                                     add_searcher_to_project,
+                                     retry_request,
+                                     get_region_key_index_static,
+                                     get_keyword_volumes)
 from database.models import TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -33,19 +38,6 @@ DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NA
 DATABASE_URL_ASYNC = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 engine = create_async_engine(DATABASE_URL_ASYNC)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
-async def retry_request(session_http, url, json_payload, headers, max_retries=5, delay=20):
-    for attempt in range(max_retries):
-        try:
-            async with session_http.post(url, json=json_payload, headers=headers) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-        except (aiohttp.ClientConnectorError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(delay)
-            else:
-                raise e
 
 
 async def start_topvisor_position_check(session_http: aiohttp.ClientSession, topvisor_project_id: int):
@@ -97,6 +89,7 @@ async def get_positions_topvisor(session_http: aiohttp.ClientSession,
 
     try:
         data = await retry_request(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
+        logger.debug(f"Данные от Topvisor (positions): {json.dumps(data, indent=2, ensure_ascii=False)}")
     except Exception as e:
         logger.error(f"Ошибка запроса позиций Topvisor для проекта {project_id}: {e}", exc_info=True)
         return None
@@ -136,74 +129,49 @@ def find_position_from_topvisor_result(result: list, keyword: str, domain: str) 
     return None
 
 
-def get_region_key_index_static(region_name: str) -> Optional[Tuple[int, int]]:
-    key_mapping = {
-        "Москва": 213,
-        "Санкт-Петербург": 2,
-        "Новосибирск": 154,
-        "Екатеринбург": 159,
-    }
-    index_mapping = {
-        "Москва": 1,
-        "Санкт-Петербург": 3,
-        "Новосибирск": 154,
-        "Екатеринбург": 159,
-    }
-    region_name_title = region_name.title()
-    key = key_mapping.get(region_name_title)
-    index = index_mapping.get(region_name_title)
-    if key is not None and index is not None:
-        return (key, index)
-    return None
-
-
 async def fetch_all_positions(session_http: aiohttp.ClientSession, project_id: int, region_key: int, date: str):
     # Получаем все позиции проекта за регион и дату (один запрос)
     return await get_positions_topvisor(session_http, project_id, region_key, date, searcher_key=0)
 
 
-async def process_single_keyword_position(session_db: AsyncSession, position_data: list, keyword: Keyword,
+async def process_single_keyword_position(session_db: AsyncSession, position_data: list, frequency_map: dict,
+                                          keyword: Keyword,
                                           domain: str, project_id: int, region_index: int, date: str) -> bool:
     try:
         logger.info(f"Обработка ключевого слова '{keyword.keyword}'")
         position = None
+        frequency = None
         keyword_text = keyword.keyword.lower()
-        domain_lower = domain.lower()
 
         for item in position_data:
             if item.get("name", "").lower() == keyword_text:
                 positions_data = item.get("positionsData", {})
                 logger.info(f"PositionsData для ключа '{keyword.keyword}': {positions_data}")
-                if not positions_data:
-                    logger.info(f"Позиции не найдены для ключа '{keyword.keyword}'")
-                    return False
 
                 key_for_date = f"{date}:{project_id}:{region_index}"
                 pos_info = positions_data.get(key_for_date)
 
-                if pos_info is None:
-                    logger.info(
-                        f"Позиция по ключу '{keyword.keyword}' не найдена для даты {date}, ключ запроса: {key_for_date}")
-                    return False
+                # Если позиций нет или pos_info нет - не считаем за ошибку, а просто position остаётся None
+                if pos_info is not None:
+                    pos_value = pos_info.get("position")
+                    if pos_value != "--" and pos_value is not None:
+                        try:
+                            position = int(pos_value)
+                            logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
+                        except (TypeError, ValueError) as e:
+                            logger.warning(
+                                f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_value}, ошибка: {e}")
 
-                pos_value = pos_info.get("position")
-                if pos_value == "--":
-                    logger.info(f"Позиция равна '--' для ключа '{keyword.keyword}', пропускаем запись")
-                    return False
+                # Получаем частотность из переданного словаря
+                frequency = frequency_map.get(keyword_text)
+                logger.info(f"Частотность для ключа '{keyword.keyword}': {frequency}")
 
-                try:
-                    position = int(pos_value)
-                    logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
-                except (TypeError, ValueError) as e:
-                    logger.warning(
-                        f"Некорректное значение позиции для ключа '{keyword.keyword}': {pos_value}, ошибка: {e}")
-                    return False
+                break  # нашли нужный ключ, выходим из цикла
 
-                break
-
-        if position is None:
-            logger.info(f"Позиция для ключевого слова '{keyword.keyword}' не найдена в данных Topvisor")
-            return False  # позиция не найдена
+        # Если нет ни позиции, ни частотности — не создаём запись
+        if position is None and (frequency is None or frequency == '-'):
+            logger.info(f"Нет позиции и частотности для ключевого слова '{keyword.keyword}', запись не создаётся")
+            return False
 
         # Получаем последнюю сохранённую позицию из БД
         stmt = (
@@ -218,7 +186,7 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
         logger.info(f"Прошлая позиция для ключа '{keyword.keyword}': {previous_position}")
 
         # Расчёт стоимости
-        if position > 10:
+        if position is None or position > 10:
             cost = 0
         elif 1 <= position <= 3:
             cost = keyword.price_top_1_3
@@ -229,7 +197,7 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
         logger.info(f"Рассчитанная стоимость для ключа '{keyword.keyword}': {cost}")
 
         # Определение тренда изменения позиции
-        if previous_position is None:
+        if previous_position is None or position is None:
             trend = TrendEnum.stable
         elif position < previous_position:
             trend = TrendEnum.up
@@ -239,17 +207,19 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
             trend = TrendEnum.stable
         logger.info(f"Тренд для ключа '{keyword.keyword}': {trend}")
 
-        # Создаём запись позиции
+        # Создаём запись позиции с частотностью и позицией (которая может быть None)
         pos_record = Position(
             keyword_id=keyword.id,
             checked_at=datetime.utcnow(),
             position=position,
+            frequency=frequency,
             previous_position=previous_position,
             cost=cost,
             trend=trend,
         )
         session_db.add(pos_record)
-        logger.info(f"Позиция для ключевого слова '{keyword.keyword}' добавлена в сессию")
+        logger.info(
+            f"Позиция для ключевого слова '{keyword.keyword}' добавлена в сессию с позицией: {position} и частотностью: {frequency}")
         return True
 
     except Exception as e:
@@ -257,30 +227,13 @@ async def process_single_keyword_position(session_db: AsyncSession, position_dat
         raise
 
 
-def get_region_key_from_keywords(keywords: List[Keyword]) -> Tuple[int, int]:
-    """
-    Из списка ключевых слов ищет первое включенное ключевое слово с регионом,
-    и возвращает (key, index) региона,
-    или значения по умолчанию для Москвы, если не найдено.
-
-    :param keywords: список объектов Keyword с полем region
-    :return: кортеж (region_key, region_index)
-    """
-    for kw in keywords:
-        if kw.is_check and kw.region:
-            result = get_region_key_index_static(kw.region)
-            if result:
-                return result
-    # Значения по умолчанию для Москвы
-    return (213, 1)
-
-
-async def process_keyword_wrapper(semaphore, session_db, all_positions_data, kw, domain, project_id,
+async def process_keyword_wrapper(semaphore, session_db, all_positions_data, frequency_map, kw, domain, project_id,
                                   failed_keywords_local, region_index, date, topvisor_project_id):
     async with semaphore:
         try:
+
             logger.info(f"Начинаем обработку ключевого слова '{kw.keyword}'")
-            success = await process_single_keyword_position(session_db, all_positions_data, kw, domain,
+            success = await process_single_keyword_position(session_db, all_positions_data, frequency_map, kw, domain,
                                                             topvisor_project_id, region_index, date)
             if not success:
                 logger.warning(f"Позиция не обновлена для ключевого слова '{kw.keyword}'")
@@ -351,95 +304,6 @@ async def process_all_keywords_together_by_id(
     return failed_keywords_local
 
 
-async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_id: int, searcher_key: int = 0,
-                                  max_retries: int = 5, delay: int = 20):
-    url = "https://api.topvisor.com/v2/json/add/positions_2/searchers"
-    headers = {
-        "User-Id": TOPVIZOR_ID,
-        "Authorization": TOPVIZOR_API_KEY,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "project_id": project_id,
-        "searcher_key": searcher_key  # 0 - Яндекс
-    }
-    try:
-        data = await retry_request(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
-        logger.info(f"Added searcher {searcher_key} to project {project_id}: {data}")
-        if data is None or (isinstance(data, dict) and data.get("errors")):
-            logger.error(
-                f"Failed to add searcher {searcher_key} to project {project_id}, response errors: {data.get('errors') if data else 'No data'}")
-            return None
-        return data
-    except Exception as e:
-        logger.error(f"Exception in add_searcher_to_project for project {project_id}: {e}", exc_info=True)
-        return None
-
-
-async def add_searcher_region(
-        session_http: aiohttp.ClientSession,
-        project_id: int,
-        searcher_key: int,
-        region_key: int,
-        region_lang: str = "ru",
-        region_device: int = 0,
-        region_depth: int = 1,
-        timeout: int = 10,
-        max_retries: int = 5,
-        delay: int = 20):
-    url = "https://api.topvisor.com/v2/json/add/positions_2/searchers_regions"
-    headers = {
-        "User-Id": TOPVIZOR_ID,
-        "Authorization": TOPVIZOR_API_KEY,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "project_id": project_id,
-        "searcher_key": searcher_key,
-        "region_key": region_key,
-        "region_lang": region_lang,
-        "region_device": region_device,
-        "region_depth": region_depth,
-    }
-
-    try:
-        # Используем retry_request с таймаутом оберткой aiohttp.ClientTimeout
-        timeout_obj = aiohttp.ClientTimeout(total=timeout)
-
-        for attempt in range(max_retries):
-            try:
-                async with session_http.post(url, json=payload, headers=headers, timeout=timeout_obj) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    logger.info(
-                        f"Added region {region_key} to project {project_id} for searcher {searcher_key}: {data}")
-                    if data is None or (isinstance(data, dict) and data.get("errors")):
-                        logger.error(
-                            f"Response errors when adding region {region_key} to project {project_id}: {data.get('errors')}")
-                        # Решаем, хотим ли повторять при ошибках api или возвратить None
-                        # Здесь остановимся и вернем None
-                        return None
-                    return data
-            except (aiohttp.ClientConnectorError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        f"Attempt {attempt + 1} failed for adding region {region_key} to project {project_id}: {e}. Retrying after {delay}s...")
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"Failed after {max_retries} attempts adding region {region_key} to project {project_id}: {e}")
-                    raise
-    except aiohttp.ClientResponseError as e:
-        logger.error(f"Failed to add region {region_key} to project {project_id}. HTTP error: {e.status} {e.message}")
-        raise
-    except asyncio.TimeoutError:
-        logger.error(f"Request timed out when adding region {region_key} to project {project_id}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error adding region {region_key} to project {project_id}: {e}")
-        raise
-
-
 async def wait_for_positions(session_http, project_id, region_key, max_wait=900, interval=30):
     date_today = datetime.utcnow().strftime("%Y-%m-%d")
     start_time = datetime.utcnow()
@@ -449,6 +313,8 @@ async def wait_for_positions(session_http, project_id, region_key, max_wait=900,
     while (datetime.utcnow() - start_time).total_seconds() < max_wait:
         keywords_data = await get_positions_topvisor(session_http, project_id, region_key,
                                                      date_today, searcher_key=0)
+        logger.info(f"Получен ответ на запрос {keywords_data}")
+
         if keywords_data:
             # проверяем, есть ли в ключевых словах реальные позиции
             if all(isinstance(item.get("positionsData"), dict) and len(item["positionsData"]) > 0 for item in
@@ -469,7 +335,7 @@ async def get_or_start_positions(session_http: aiohttp.ClientSession, project_id
 
         if positions and all(
                 isinstance(item.get("positionsData"), dict) and len(item["positionsData"]) > 0 for item in positions):
-            logger.info(f"Позиции за {date} найдены на Topvisor для проекта {project_id}")
+            logger.info(f"Позиции за {date} найдены на Topvisor для проекта {project_id}: {positions}")
             return positions
 
         logger.info(f"Позиции за {date} отсутствуют. Запускаем процесс снятия позиций для проекта {project_id}")
@@ -480,7 +346,7 @@ async def get_or_start_positions(session_http: aiohttp.ClientSession, project_id
 
         positions = await wait_for_positions(session_http, project_id, region_index)
         if positions:
-            logger.info(f"Позиции получены после запуска снятия для проекта {project_id}")
+            logger.info(f"Позиции получены после запуска снятия для проекта {project_id}: {positions}")
             return positions
         else:
             logger.warning(f"Позиции не получили после запуска снятия для проекта {project_id}")
@@ -497,107 +363,136 @@ async def get_or_start_positions(session_http: aiohttp.ClientSession, project_id
 
 
 async def main_task(project_id: UUID):
-    semaphore = asyncio.Semaphore(1)  # Последовательная обработка ключевых слов
+    semaphore = asyncio.Semaphore(1)
 
-    async with aiohttp.ClientSession() as session_http:
-        async with AsyncSessionLocal() as session_db:
-            # Получаем проект и ключевые слова из БД
-            result = await session_db.execute(
-                select(Project)
-                .options(selectinload(Project.keywords))
-                .where(Project.id == project_id)
+    async with aiohttp.ClientSession() as session_http, AsyncSessionLocal() as session_db:
+        result = await session_db.execute(
+            select(Project)
+            .options(
+                selectinload(Project.groups).selectinload(Group.keywords)
             )
-            project = result.scalar_one_or_none()
-            if not project:
-                logger.error(f"Project with id={project_id} not found")
-                return False, "not_found"
+            .where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            logger.error(f"Project with id={project_id} not found")
+            return False, "not_found"
 
-            logger.info(f"Processing project: {project.domain}, id={project.id}")
+        failed = []
 
-            region_key, region_index = get_region_key_from_keywords(project.keywords)
-            topvisor_project_id = project.topvisor_id
+        def has_access_error(response):
+            if isinstance(response, dict) and "errors" in response:
+                for err in response["errors"]:
+                    if err.get("code") == 54:
+                        return True
+            return False
 
-            # Вспомогательная функция проверки ошибок доступа
-            def has_access_error(response):
-                if isinstance(response, dict) and "errors" in response:
-                    for err in response["errors"]:
-                        if err.get("code") == 54:
-                            return True
-                return False
+        date_today = datetime.utcnow().strftime("%Y-%m-%d")
 
+        for group in project.groups:
+            group_topvisor_id = group.topvisor_id
+            if not group_topvisor_id:
+                logger.warning(f"Group {group.title} does not have topvisor_id, skipped")
+                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                continue
+
+            logger.info(f"Processing group {group.title} with Topvisor ID {group_topvisor_id}")
+
+            # Получаем регион из группы
+            region_key, region_index = await get_region_key_index_static(group.region) or (213, 1)
+
+            # Получаем информацию по группе-проекту в Topvisor
             try:
-                data = await get_project_info_by_topvizor(topvisor_project_id)
-                logger.info(f"Topvisor project info for project {project.domain}: {data}")
+                data = await get_project_info_by_topvizor(group_topvisor_id)
+                logger.info(f"Topvisor group info for {group.title}: {data}")
                 if has_access_error(data):
-                    logger.error(f"Access denied for project info of {project.domain}")
-                    return False, "access_denied"
+                    logger.error(f"Access denied for group info of {group.title}")
+                    failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                    continue
             except Exception as e:
-                logger.error(f"Error getting project info from Topvisor for project {project.domain}: {e}",
-                             exc_info=True)
-                return False, "exception"
+                logger.error(f"Error getting group info from Topvisor for {group.title}: {e}", exc_info=True)
+                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                continue
 
+            # Добавляем поисковика для группы/проекта в Topvisor
             try:
-                resp = await add_searcher_to_project(session_http, topvisor_project_id, searcher_key=0)
+                resp = await add_searcher_to_project(session_http, group_topvisor_id, searcher_key=0)
                 if has_access_error(resp):
-                    logger.error(f"Access denied adding searcher for project {project.domain}")
-                    return False, "access_denied"
+                    logger.error(f"Access denied adding searcher for group {group.title}")
+                    failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                    continue
             except Exception as e:
-                logger.error(f"Error adding searcher to project {project.domain}: {e}", exc_info=True)
-                return False, "exception"
+                logger.error(f"Error adding searcher to group {group.title}: {e}", exc_info=True)
+                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                continue
 
+            # Добавляем регион поисковика для группы
             try:
-                resp = await add_searcher_region(session_http, topvisor_project_id, searcher_key=0,
-                                                 region_key=region_key)
+                resp = await add_searcher_region(session_http, group_topvisor_id, searcher_key=0, region_key=region_key)
                 if has_access_error(resp):
-                    logger.error(f"Access denied adding searcher region for project {project.domain}")
-                    return False, "access_denied"
+                    logger.error(f"Access denied adding searcher region for group {group.title}")
+                    failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                    continue
             except Exception as e:
-                logger.error(f"Error adding searcher region to project {project.domain}: {e}", exc_info=True)
-                return False, "exception"
+                logger.error(f"Error adding searcher region to group {group.title}: {e}", exc_info=True)
+                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                continue
 
-            date_today = datetime.utcnow().strftime("%Y-%m-%d")
-            positions_data = await get_or_start_positions(session_http, topvisor_project_id, region_index, date_today)
-            if not positions_data:
-                logger.warning(f"Positions data not ready for project {project.domain}")
-                return False, "positions_not_ready"
+            # Получаем позиции для группы в Topvisor
+            positions_data = await get_or_start_positions(session_http, group_topvisor_id, region_index, date_today)
+            volumes_data = await get_keyword_volumes(session_http, group_topvisor_id, region_key, searcher_key=0,
+                                                     type_volume=1)
 
-            if not positions_data:
-                logger.warning(f"Positions data not ready for project {project.domain}")
-                return False, "positions_not_ready"
+            frequency_map = {}
+            if volumes_data:
+                volume_field_name = None
+                first_volume_item = volumes_data[0] if len(volumes_data) > 0 else {}
+                for field in first_volume_item.keys():
+                    if field.startswith("volume:"):
+                        volume_field_name = field
+                        break
+                if volume_field_name:
+                    for item in volumes_data:
+                        name = item.get("name", "").lower()
+                        val = item.get(volume_field_name)
+                        if val is not None:
+                            try:
+                                frequency_map[name] = int(val)
+                            except Exception:
+                                frequency_map[name] = None
 
-            failed = []
-            date_today = datetime.utcnow().strftime("%Y-%m-%d")
-
-            # Последовательная обработка ключевых слов
-            for kw in [k for k in project.keywords if k.is_check]:
+            # Обрабатываем ключи с передачей и позиций, и частотности
+            for kw in [k for k in group.keywords if k.is_check]:
                 try:
                     await process_keyword_wrapper(
                         semaphore,
                         session_db,
                         positions_data,
+                        frequency_map,
                         kw,
                         project.domain,
                         project.id,
                         failed,
                         region_index,
                         date_today,
-                        topvisor_project_id
+                        group_topvisor_id,
                     )
+
                 except Exception as e:
-                    logger.error(f"Error processing keyword {kw.keyword} for project {project.domain}: {e}",
-                                 exc_info=True)
+                    logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}", exc_info=True)
                     failed.append((project.id, kw.id))
 
-            logger.info(f"Position update completed for {project.domain}. Failed keywords count: {len(failed)}")
+        # Коммитим один раз после обработки всех групп
+        try:
+            await session_db.commit()
+            logger.info(f"Database commit successful for project {project.domain}")
+        except Exception as e:
+            logger.error(f"Error during DB commit for project {project.domain}: {e}", exc_info=True)
+            await session_db.rollback()
 
-            try:
-                await session_db.commit()
-                logger.info(f"Database commit successful for project {project.domain}")
-            except Exception as e:
-                logger.error(f"Error during DB commit for project {project.domain}: {e}", exc_info=True)
-                await session_db.rollback()
+        logger.info(f"Position update completed for project {project.domain}. Failed keywords count: {len(failed)}")
 
-            return True, None
+        return True, None
 
 
 @celery_app.task(bind=True)

@@ -26,10 +26,10 @@ class TrendEnum(str, Enum):
 
 class KeywordBase(BaseModel):
     keyword: constr(min_length=1)
-    region: str
     price_top_1_3: int = Field(0, ge=0)
     price_top_4_5: int = Field(0, ge=0)
     price_top_6_10: int = Field(0, ge=0)
+    is_check: Optional[bool] = True
 
 
 class KeywordCreate(KeywordBase):
@@ -38,11 +38,11 @@ class KeywordCreate(KeywordBase):
 
 class KeywordUpdate(BaseModel):
     keyword: Optional[constr(min_length=1)] = None
-    region: Optional[str] = None
     is_check: Optional[bool] = None
     price_top_1_3: Optional[int] = Field(None, ge=0)
     price_top_4_5: Optional[int] = Field(None, ge=0)
     price_top_6_10: Optional[int] = Field(None, ge=0)
+    group_id: Optional[UUID] = None
 
     class Config:
         orm_mode = True
@@ -50,12 +50,48 @@ class KeywordUpdate(BaseModel):
 
 class KeywordOut(KeywordUpdate):
     id: UUID
-    region: str
     currentPosition: Optional[int] = None
     previousPosition: Optional[int] = None
     lastChecked: Optional[datetime] = None
     cost: Optional[int] = 0
     trend: Optional[TrendEnum] = TrendEnum.stable
+
+    class Config:
+        orm_mode = True
+
+
+# --- Group ---
+
+class GroupBase(BaseModel):
+    title: constr(min_length=1)
+    region: constr(min_length=1)
+    search_engine: SearchEngineEnum = Field(SearchEngineEnum.yandex, alias="searchEngine")
+    topvisor_id: Optional[int] = None
+
+
+class GroupCreate(GroupBase):
+    project_id: UUID  # На какой проект относится группа
+
+
+class GroupUpdate(BaseModel):
+    title: Optional[constr(min_length=1)] = None
+    region: Optional[constr(min_length=1)] = None
+    search_engine: Optional[SearchEngineEnum] = Field(None, alias="searchEngine")
+    topvisor_id: Optional[int] = None
+    project_id: Optional[UUID] = None
+
+    class Config:
+        allow_population_by_field_name = True
+        orm_mode = True
+
+
+class GroupOut(GroupBase):
+    id: UUID
+    keywords: List[KeywordOut] = []
+
+    class Config:
+        allow_population_by_field_name = True
+        orm_mode = True
 
 
 # --- Position ---
@@ -65,9 +101,13 @@ class PositionOut(BaseModel):
     keyword_id: UUID
     checked_at: datetime
     position: Optional[int] = None
+    frequency: Optional[int] = None
     previous_position: Optional[int] = None
     cost: int
     trend: TrendEnum
+
+    class Config:
+        orm_mode = True
 
 
 class IntervalSumOut(BaseModel):
@@ -94,24 +134,19 @@ class KeywordIntervals(BaseModel):
 
 class ProjectBase(BaseModel):
     domain: constr(min_length=1)
-    search_engine: SearchEngineEnum = Field(SearchEngineEnum.yandex, alias="searchEngine")
-    schedule: ScheduleEnum = Field(ScheduleEnum.daily, alias="schedule")
-    topvisor_id: Optional[int] = None
 
     class Config:
-        allow_population_by_field_name = True  # Позволяет создавать модель и по snake_case
-        orm_mode = True  # Позволяет работать с ORM-моделями (SQLAlchemy)
+        allow_population_by_field_name = True
+        orm_mode = True
 
 
 class ProjectCreate(ProjectBase):
-    keywords: List[KeywordCreate]
+    pass
 
 
 class ProjectUpdate(BaseModel):
     domain: Optional[constr(min_length=1)] = None
-    search_engine: Optional[SearchEngineEnum] = Field(None, alias="searchEngine")
-    schedule: Optional[ScheduleEnum] = Field(None, alias="schedule")
-    keywords: Optional[List[KeywordUpdate]] = None
+    groups: Optional[List[GroupUpdate]] = None
 
     class Config:
         allow_population_by_field_name = True
@@ -122,11 +157,11 @@ class ProjectOut(ProjectBase):
     id: UUID
     created_at: datetime = Field(..., alias="createdAt")
     client_link: str = Field(..., alias="clientLink")
-    keywords: List[KeywordOut]
+    groups: Optional[List[GroupOut]] = None
 
     model_config = ConfigDict(
-        from_attributes=True,  # Включает поддержку ORM-объектов
-        populate_by_name=True  # Позволяет использовать alias при валидации и сериализации
+        from_attributes=True,
+        populate_by_name=True
     )
 
 
@@ -136,7 +171,7 @@ class ClientProjectOut(BaseModel):
     id: UUID
     created_at: datetime = Field(..., alias="createdAt")
     domain: str
-    keywords: List[KeywordOut]
+    groups: List[GroupOut]
 
     model_config = ConfigDict(
         from_attributes=True,  # Включает поддержку ORM-объектов

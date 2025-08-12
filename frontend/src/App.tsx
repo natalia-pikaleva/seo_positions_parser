@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { jwtDecode } from 'jwt-decode';
+import * as jwt_decode from 'jwt-decode';
 
 import { Dashboard } from './components/Dashboard';
 import { ProjectForm } from './components/ProjectForm';
 import { PositionTable } from './components/PositionTable';
-import { ClientView } from './components/ClientView';
+import { ProjectGroups } from './components/ProjectGroups';
 import { AuthModal } from './components/AuthModal';
 import { RegisterManagerModal } from './components/RegisterManagerModal';
-import { ChangePasswordModal } from './components/ChangePasswordModal'
-import { Project } from './types';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
+
+import { Project, Group } from './types';
 
 import {
   fetchProjects,
@@ -18,7 +19,8 @@ import {
   fetchClientProjectByLink,
 } from './utils/api';
 
-import logo  from './assets/logo.png';
+import logo from './assets/logo.png';
+
 interface JwtPayload {
   sub: string;
   role: string;
@@ -26,128 +28,166 @@ interface JwtPayload {
   // другие поля, если есть
 }
 
+type View = 'dashboard' | 'form' | 'projectGroups' | 'positionTable' | 'client';
+
 function App() {
+  // Основные состояния
   const [projects, setProjects] = useState<Project[]>([]);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'form' | 'project' | 'client'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [currentView, setCurrentView] = useState<View>('dashboard');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Авторизация
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [isTemporaryPassword, setIsTemporaryPassword] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Модалки регистрации и смены пароля
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [registerSuccessUsername, setRegisterSuccessUsername] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
+  const [isClientAccess, setIsClientAccess] = useState(false);
 
-  const loadedRef = useRef(false);
-
-  // Загрузка данных при монтировании
-
-
+  // Восстановление авторизации и загрузка данных при монтировании
   useEffect(() => {
-	  // Функция для проверки и восстановления токена
-	  const restoreAuthFromStorage = () => {
-	    const savedToken = localStorage.getItem('token');
-	    if (!savedToken) {
-	      return null;
-	    }
+    const restoreAuthFromStorage = () => {
+      const savedToken = localStorage.getItem('token');
+      if (!savedToken) return null;
 
-	    try {
-	      const decoded = jwtDecode<JwtPayload>(savedToken);
-	      const now = Date.now() / 1000; // текущее время в секундах
+      try {
+        const decoded = jwt_decode<JwtPayload>(savedToken);
+        const now = Date.now() / 1000;
+        if (decoded.exp && decoded.exp > now) {
+          setAuthToken(savedToken);
+          setUserRole(decoded.role);
+          return savedToken;
+        } else {
+          localStorage.removeItem('token');
+          return null;
+        }
+      } catch {
+        localStorage.removeItem('token');
+        return null;
+      }
+    };
 
-	      if (decoded.exp && decoded.exp > now) {
-	        // Токен валиден
-	        setAuthToken(savedToken);
-	        setUserRole(decoded.role);
-	        return savedToken;
-	      } else {
-	        // Токен просрочен
-	        localStorage.removeItem('token');
-	        return null;
-	      }
-	    } catch (error) {
-	      // Ошибка декодирования токена — удаляем
-	      localStorage.removeItem('token');
-	      return null;
-	    }
-	  };
+    restoreAuthFromStorage();
 
-	  // Восстанавливаем авторизацию
-	  restoreAuthFromStorage();
+    async function loadData() {
+      setLoading(true);
+      setError(null);
 
-	  // Загружаем данные
-	  async function loadData() {
-	    setLoading(true);
-	    setError(null);
+      try {
+        const pathSegments = window.location.pathname.split('/');
+        const clientIndex = pathSegments.indexOf('client');
 
-	    const pathSegments = window.location.pathname.split('/');
-	    const clientIndex = pathSegments.indexOf('client');
+        if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
+          const clientLink = pathSegments[clientIndex + 1];
+          const project = await fetchClientProjectByLink(clientLink);
+          setSelectedProject(project);
+          setIsClientAccess(true);
+          setCurrentView('projectGroups');
+        } else {
+          setIsClientAccess(false);
+          const list = await fetchProjects();
+          setProjects(list);
+          setCurrentView('dashboard');
+        }
+      } catch (e) {
+        console.error(e);
+        setError('Ошибка загрузки данных');
+        setCurrentView('dashboard');
+      } finally {
+        setLoading(false);
+      }
+    }
 
-	    try {
-	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
-	        const clientLink = pathSegments[clientIndex + 1];
-	        const project = await fetchClientProjectByLink(clientLink);
-	        setSelectedProject(project);
-	        setCurrentView('client');
-	      } else {
-	        const projects = await fetchProjects();
-	        setProjects(projects);
-	        setCurrentView('dashboard');
-	      }
-	    } catch (e) {
-	      console.error(e);
-	      setError('Ошибка загрузки данных');
-	      setCurrentView('dashboard');
-	    } finally {
-	      setLoading(false);
-	    }
+    loadData();
+  }, []);
+
+  // Обработчик выбора проекта
+  const handleSelectProject = useCallback(async (project: Project) => {
+    setLoading(true);
+    try {
+      const fullProject = await fetchProject(project.id);
+      setSelectedProject(fullProject);
+      setSelectedGroup(null);
+      setCurrentView('projectGroups');
+    } catch (e) {
+      console.error(e);
+      alert('Не удалось загрузить проект');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Обработчик выбора группы
+  const handleSelectGroup = useCallback(async (group: Group) => {
+	  if (!selectedProject) return;
+	  setLoading(true);
+	  try {
+	    const updatedProject = await fetchProject(selectedProject.id);
+	    setSelectedProject(updatedProject);
+	    const foundGroup = updatedProject.groups.find(g => g.id === group.id) || null;
+	    setSelectedGroup(foundGroup);
+	    setCurrentView('positionTable');
+	  } catch (e) {
+	    alert('Не удалось загрузить проект');
+	  } finally {
+	    setLoading(false);
 	  }
-
-	  loadData();
-	}, []);
+	}, [selectedProject]);
 
 
-
-  // Колбеки для управления состояниями и действиями
-
-  const handleLoadDashboard = useCallback((projects: Project[]) => {
-    setProjects(projects);
+  // Возврат из ProjectGroups к Dashboard
+  const handleBackToDashboard = useCallback(() => {
+    setSelectedProject(null);
+    setSelectedGroup(null);
+    setCurrentView('dashboard');
   }, []);
 
-  const handleLoadClientProject = useCallback((project: Project) => {
-    setSelectedProject(project);
+  // Возврат из PositionTable к проекту (список групп)
+  const handleBackToProjectGroups = useCallback(() => {
+    setSelectedGroup(null);
+    setCurrentView('projectGroups');
   }, []);
 
-  const handleError = useCallback((error: string) => {
-    setError(error);
+  // Обновление проектов
+  const refreshProjects = useCallback(async () => {
+    try {
+      const list = await fetchProjects();
+      setProjects(list);
+      return list;
+    } catch {
+      return [];
+    }
   }, []);
 
-  const handleSetLoading = useCallback((loading: boolean) => {
-    setLoading(loading);
-  }, []);
+  // Обновление выбранного проекта
+  const refreshProject = useCallback(async () => {
+    if (!selectedProject) return null;
+    try {
+      const project = await fetchProject(selectedProject.id);
+      setSelectedProject(project);
+      return project;
+    } catch {
+      return null;
+    }
+  }, [selectedProject]);
 
-  const handleSetView = useCallback((view: 'dashboard' | 'client') => {
-    setCurrentView(view);
-  }, []);
-
-  const handleProjectLoaded = (project: Project) => {
-    setSelectedProject(project);
-    setProjects(prev => prev.map(p => (p.id === project.id ? project : p)));
-  };
-
+  // Обработки создания и обновления проектов
   const handleCreateProject = async (projectData: Omit<Project, 'id' | 'createdAt' | 'clientLink'>) => {
     try {
-      console.log('Данные проекта для отправки:', projectData);
       const newProject = await createProject(projectData);
-      console.log('Созданный проект:', newProject);
-
       setProjects(prev => [...prev, newProject]);
       setCurrentView('dashboard');
-    } catch (error) {
-      console.error('Ошибка создания проекта:', error);
+    } catch (e) {
+      console.error(e);
       alert('Не удалось создать проект');
     }
   };
@@ -157,24 +197,59 @@ function App() {
       const project = await updateProject(updatedProject.id, updatedProject);
       setProjects(prev => prev.map(p => (p.id === project.id ? project : p)));
       setSelectedProject(project);
-    } catch (error) {
-      console.error('Ошибка обновления проекта:', error);
+    } catch (e) {
+      console.error(e);
       alert('Не удалось обновить проект');
     }
   };
 
-  const handleSelectProject = async (project: Project) => {
+  const handleProjectGroupLoaded = (updatedProject: Project) => {
+    setSelectedProject(updatedProject);
+    setProjects(prev => prev.map(p => (p.id === updatedProject.id ? updatedProject : p)));
+  };
+
+  // Обработка логина
+  const handleLoginSuccess = (token: string, isTemp: boolean) => {
+    setAuthToken(token);
+    setIsTemporaryPassword(isTemp);
+    localStorage.setItem('token', token);
+
     try {
-      const fullProject = await fetchProject(project.id);
-      setSelectedProject(fullProject);
-      setCurrentView('project');
-    } catch (error) {
-      console.error('Ошибка загрузки проекта:', error);
-      alert('Не удалось загрузить проект');
+      const decoded = jwt_decode<JwtPayload>(token);
+      setUserRole(decoded.role);
+    } catch {
+      setUserRole(null);
+    }
+
+    if (isTemp) {
+      setShowChangePasswordModal(true);
     }
   };
 
-  // Отображение состояний загрузки и ошибок
+  // Выход из системы
+  const handleLogout = () => {
+    setAuthToken(null);
+    setUserRole(null);
+    setIsTemporaryPassword(false);
+    localStorage.removeItem('token');
+    setCurrentView('dashboard');
+    setSelectedProject(null);
+    setSelectedGroup(null);
+  };
+
+  // Модалки управления
+  const openAuth = () => setIsAuthOpen(true);
+  const closeAuth = () => setIsAuthOpen(false);
+
+  const openRegisterModal = () => {
+    setRegisterSuccessUsername(null);
+    setIsRegisterModalOpen(true);
+  };
+  const closeRegisterModal = () => setIsRegisterModalOpen(false);
+
+  const handleRegisterSuccess = (username: string) => {
+    setRegisterSuccessUsername(username);
+  };
 
   if (loading) {
     return <div className="text-center py-8">Загрузка...</div>;
@@ -184,187 +259,158 @@ function App() {
     return <div className="text-center py-8 text-red-600">{error}</div>;
   }
 
-  // Отдельный рендер для клиентского вида
-
-  if (currentView === 'client' && selectedProject) {
-    console.log('Рендерим ClientView с проектом:', selectedProject);
-    return <ClientView project={selectedProject} />;
+  // Проверка: если нет токена И это не клиент — просим залогиниться
+  if (!authToken && !isClientAccess) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-700">
+        <div className="flex items-center space-x-3 justify-center sm:justify-start w-full sm:w-auto">
+          <img src={logo} alt="Логотип" className="h-12 w-auto" />
+          <h1 className="text-xl font-bold">SEO Position Parser</h1>
+        </div>
+        <p>Пожалуйста, войдите в систему для доступа к приложению.</p>
+        <button
+          onClick={openAuth}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Войти
+        </button>
+        {isAuthOpen && <AuthModal onClose={closeAuth} onLoginSuccess={handleLoginSuccess} />}
+      </div>
+    );
   }
 
-  // Открыть модалку авторизации
-  const openAuth = () => setIsAuthOpen(true);
-  const closeAuth = () => setIsAuthOpen(false);
-
-  // Обработчик успешного логина
-  const handleLoginSuccess = (token: string, isTemp: boolean) => {
-	  setAuthToken(token);
-	  setIsTemporaryPassword(isTemp);
-	  localStorage.setItem('token', token);
-
-	  try {
-	    const decoded = jwt_decode<JwtPayload>(token);
-	    setUserRole(decoded.role);
-	  } catch {
-	    setUserRole(null);
-	  }
-
-	  if (isTemp) {
-	    setShowChangePasswordModal(true);
-	  }
-	};
-
-
-
-  // Логика выхода
-  const handleLogout = () => {
-    setAuthToken(null);
-    setUserRole(null);
-    setIsTemporaryPassword(false);
-    localStorage.removeItem('token');
-    setCurrentView('dashboard');
-  };
-
-  // Функции открытия/закрытия модалки регистрации
-  const openRegisterModal = () => {
-    setRegisterSuccessUsername(null);
-    setIsRegisterModalOpen(true);
-  };
-  const closeRegisterModal = () => setIsRegisterModalOpen(false);
-
-  // Обработчик успешной регистрации
-  const handleRegisterSuccess = (username: string) => {
-    setRegisterSuccessUsername(username);
-  };
-
-
-  // Основной рендер
-
+  // Основной рендер — хедер всегда + условно содержимое
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-		  <div className="flex items-center space-x-3 justify-center sm:justify-start w-full sm:w-auto">
-		    <img src={logo} alt="Логотип" className="h-12 w-auto" />
-		    <h1 className="text-xl font-bold">SEO Position Parser</h1>
-		  </div>
-		  <div className="flex flex-col sm:flex-row items-center w-full sm:w-auto gap-2 sm:gap-4">
-		    {!authToken ? (
+      {/* Хедер */}
+      <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 p-4 max-w-7xl mx-auto">
+        <div className="flex items-center space-x-3 justify-center sm:justify-start w-full sm:w-auto">
+          <img src={logo} alt="Логотип" className="h-12 w-auto" />
+          <h1 className="text-xl font-bold">SEO Position Parser</h1>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center w-full sm:w-auto gap-2 sm:gap-4">
+          {authToken || isClientAccess ? (
+		  <>
+		    {userRole === 'admin' && (
 		      <button
-		        onClick={openAuth}
-		        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+		        onClick={openRegisterModal}
+		        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
 		      >
-		        Войти
+		        Регистрация менеджера
 		      </button>
-		    ) : (
-		      <>
-		        {userRole === 'admin' && (
-		          <button
-		            onClick={openRegisterModal}
-		            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-		          >
-		            Регистрация менеджера
-		          </button>
-		        )}
-		        <button
-		          onClick={handleLogout}
-		          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-		        >
-		          Выйти
-		        </button>
-		      </>
 		    )}
-		  </div>
-		</div>
+		    {authToken && (
+		      <button
+		        onClick={handleLogout}
+		        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+		      >
+		        Выйти
+		      </button>
+		    )}
+		  </>
+		) : (
+		  <button
+		    onClick={openAuth}
+		    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+		  >
+		    Войти
+		  </button>
+		)}
 
+        </div>
+      </header>
 
-      {/* Модалка регистрации менеджера */}
+      {/* Основной контент */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {currentView === 'dashboard' && !isClientAccess && (
+          <Dashboard
+            projects={projects}
+            onCreateProject={() => setCurrentView('form')}
+            onSelectProject={handleSelectProject}
+            refreshProjects={refreshProjects}
+            isClientView={false}
+          />
+        )}
+
+        {currentView === 'form' && !isClientAccess && (
+          <ProjectForm
+            onSubmit={handleCreateProject}
+            onCancel={() => setCurrentView('dashboard')}
+          />
+        )}
+
+        {currentView === 'projectGroups' && selectedProject && (
+          <ProjectGroups
+			  project={selectedProject}
+			  onBack={handleBackToDashboard}
+			  onSelectGroup={handleSelectGroup}
+			  refreshProject={refreshProject}
+			  onProjectGroupLoaded={(updatedProject) => {
+			    setSelectedProject(updatedProject);
+			    setProjects(prev => prev.map(p => (p.id === updatedProject.id ? updatedProject : p)));
+			  }}
+			  isClientView={isClientAccess}
+			/>
+        )}
+
+        {currentView === 'positionTable' && selectedProject && selectedGroup && (
+          <div className="space-y-6 max-w-7xl mx-auto">
+            <button
+              onClick={handleBackToProjectGroups}
+              className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
+            >
+              ← Назад к группам
+            </button>
+            <PositionTable
+			    group={selectedGroup}
+			    onGroupLoaded={(updatedGroup) => {
+			      // Формируем обновлённый проект с новой группой
+			      handleProjectGroupLoaded({
+			        ...selectedProject,
+			        groups: selectedProject.groups.map(g =>
+			          g.id === updatedGroup.id ? updatedGroup : g
+			        ),
+			      });
+			    }}
+			    onUpdateGroup={(updatedGroup) => {
+			      handleProjectGroupLoaded({
+			        ...selectedProject,
+			        groups: selectedProject.groups.map(g =>
+			          g.id === updatedGroup.id ? updatedGroup : g
+			        ),
+			      });
+			    }}
+			    isClientView={isClientAccess}
+			    domain={selectedProject.domain}
+			    groups={selectedProject.groups}
+			  />
+          </div>
+        )}
+      </main>
+
+      {/* Модалки */}
       {isRegisterModalOpen && (
         <RegisterManagerModal
-		  onClose={closeRegisterModal}
-		  onRegisterSuccess={handleRegisterSuccess}
-		  token={authToken!}  // передаём токен из состояния authToken
-		/>
+          onClose={closeRegisterModal}
+          onRegisterSuccess={handleRegisterSuccess}
+          token={authToken!}
+        />
       )}
-
-      {/* Уведомление об успешной регистрации */}
-      {registerSuccessUsername && (
-        <div className="max-w-7xl mx-auto px-4 py-4 bg-green-100 text-green-800 rounded mt-4">
-          Менеджер <strong>{registerSuccessUsername}</strong> успешно зарегистрирован.<br />
-          Передайте ему логин и пароль (пароль равен логину) для авторизации.
-        </div>
+      {showChangePasswordModal && authToken && (
+        <ChangePasswordModal
+          token={authToken}
+          onClose={() => setShowChangePasswordModal(false)}
+          onPasswordChanged={() => {
+            setIsTemporaryPassword(false);
+            alert('Пароль успешно изменён. Пожалуйста, войдите снова.');
+            handleLogout();
+          }}
+        />
       )}
-
-    {/* Модалка авторизации */}
-    {isAuthOpen && (
-      <AuthModal onClose={closeAuth} onLoginSuccess={handleLoginSuccess} />
-    )}
-
-    {/* Модалка смены пароля */}
-	{showChangePasswordModal && authToken && (
-	  <ChangePasswordModal
-	    token={authToken}
-	    onClose={() => setShowChangePasswordModal(false)}
-	    onPasswordChanged={() => {
-	      setIsTemporaryPassword(false);
-	      alert('Пароль успешно изменён. Пожалуйста, войдите снова.');
-	      handleLogout(); // или обновите токен, если хотите
-	    }}
-	  />
-	)}
-
-
-    {/* Основной контент */}
-
-    {/* Если клиентский просмотр — показываем ClientView без авторизации */}
-    {currentView === 'client' && selectedProject ? (
-      <ClientView project={selectedProject} />
-    ) : (
-      // Иначе показываем приложение только если авторизован
-      authToken ? (
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          {currentView === 'dashboard' && (
-            <Dashboard
-              projects={projects}
-              onCreateProject={() => setCurrentView('form')}
-              onSelectProject={handleSelectProject}
-            />
-          )}
-
-          {currentView === 'form' && (
-            <ProjectForm
-              onSubmit={handleCreateProject}
-              onCancel={() => setCurrentView('dashboard')}
-            />
-          )}
-
-          {currentView === 'project' && selectedProject && (
-            <div className="space-y-6">
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                className="text-blue-600 hover:text-blue-800 font-medium"
-              >
-                ← Вернуться к проектам
-              </button>
-              <PositionTable
-                project={selectedProject}
-                onProjectLoaded={handleProjectLoaded}
-                onUpdateProject={handleUpdateProject}
-              />
-            </div>
-          )}
-        </div>
-      ) : (
-        // Если не авторизован и не клиент — показываем кнопку Войти и/или сообщение
-        <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-700">
-          <p>Пожалуйста, войдите в систему для доступа к приложению.</p>
-        </div>
-      )
-    )}
-  </div>
-);
-
-
-
-
+    </div>
+  );
 }
 
 export default App;
+

@@ -1,14 +1,3 @@
-export interface Project {
-  id: string;
-  domain: string;
-  keywords: KeywordData[];
-  region: string;
-  searchEngine: string;
-  schedule: string;
-  createdAt: string;
-  clientLink: string;
-}
-
 export interface KeywordData {
   id: string;
   keyword: string;
@@ -53,4 +42,42 @@ export interface FilterOptions {
   period: 'week' | 'month' | 'custom';
   startDate?: string;
   endDate?: string;
+}
+
+// Базовые данные группы (аналог GroupBase)
+export interface GroupBase {
+  title: string;
+  region: string;
+  searchEngine: SearchEngineEnum;
+  topvisorId?: number; // optional, может быть undefined
+}
+
+// Для создания группы (аналог GroupCreate)
+export interface GroupCreate extends GroupBase {
+  projectId: string; // UUID проекта в виде строки
+}
+
+// Для обновления группы (аналог GroupUpdate)
+export interface GroupUpdate {
+  title?: string;
+  region?: string;
+  searchEngine?: SearchEngineEnum;
+  topvisorId?: number;
+  projectId?: string;
+}
+
+// Вывод данных группы (аналог GroupOut)
+export interface Group extends GroupBase {
+  id: string;
+  keywords: KeywordData[];
+}
+
+export interface Project {
+  id: string;
+  domain: string;
+  schedule: string;
+  topvisorId?: number;
+  createdAt: string;
+  clientLink: string;
+  groups: Group[];
 }

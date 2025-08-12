@@ -10,12 +10,14 @@ import io
 import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
-import asyncio
 from database.db_init import get_db
-from database.models import Project, Keyword, Position
-from routers.schemas import ProjectCreate, ProjectUpdate, KeywordUpdate, ProjectOut, ClientProjectOut, \
-    PositionOut, KeywordCreate, KeywordUpdate, KeywordOut, IntervalSumOut, KeywordIntervals
-from services.task import parse_positions_by_project_task
+from database.models import Project, Keyword, Position, Group, SearchEngineEnum
+from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
+                             ProjectOut, ClientProjectOut, PositionOut,
+                             KeywordCreate, KeywordUpdate, KeywordOut,
+                             IntervalSumOut, KeywordIntervals, GroupOut,
+                             GroupCreate, GroupUpdate)
+
 from services.api_utils import generate_client_link
 from services.topvizor_task import main_task
 from services.topvizor_utils import (create_project_in_topvisor,
@@ -23,7 +25,10 @@ from services.topvizor_utils import (create_project_in_topvisor,
                                      delete_keyword_topvisor,
                                      delete_project_topvisor,
                                      update_project_topvisor,
-                                     import_keywords)
+                                     import_keywords,
+                                     get_region_key_index_static,
+                                     add_searcher_to_project,
+                                     add_searcher_region)
 
 import aiohttp
 import os
@@ -39,28 +44,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# --- Переключение ключевых слов в состояние снятие позиций и отключение
-
-@router.patch("/keywords/{keyword_id}/disable", status_code=status.HTTP_204_NO_CONTENT)
-async def disable_keyword_check(keyword_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Keyword).where(Keyword.id == keyword_id))
-    keyword = result.scalars().first()
-    if not keyword:
-        raise HTTPException(status_code=404, detail="Keyword not found")
-    keyword.is_check = False
-    await db.commit()
-    return
-
-
-@router.patch("/keywords/{keyword_id}/enable", status_code=status.HTTP_204_NO_CONTENT)
-async def enable_keyword_check(keyword_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Keyword).where(Keyword.id == keyword_id))
-    keyword = result.scalars().first()
-    if not keyword:
-        raise HTTPException(status_code=404, detail="Keyword not found")
-    keyword.is_check = True
-    await db.commit()
-    return
 
 
 # --- Проекты ---
@@ -70,7 +53,7 @@ async def get_projects(db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(
             select(Project).options(
-                selectinload(Project.keywords)
+                selectinload(Project.groups)
             )
         )
         projects = result.scalars().all()
@@ -83,87 +66,32 @@ async def get_projects(db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=ProjectOut, status_code=201)
 async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(get_db)):
     try:
-        # 1. Создаём проект в Topvisor
-        topvisor_project_id = await create_project_in_topvisor(
-            url=project_in.domain,
-            name=project_in.domain if project_in.domain else None
-        )
-        if not topvisor_project_id:
-            logging.error("Не удалось создать проект в Topvisor")
-            raise HTTPException(status_code=500, detail="Ошибка создания проекта в Topvisor")
-
-        # 2. Создаём локальный проект с topvisor_id
-        project_data = project_in.dict(exclude={"keywords"}, by_alias=False)
-        project_data["topvisor_id"] = int(topvisor_project_id)
+        project_data = project_in.dict(exclude={"groups"}, by_alias=False)
 
         if not project_data.get("client_link"):
             project_data["client_link"] = generate_client_link()
-
         if not project_data.get("created_at"):
             project_data["created_at"] = datetime.utcnow()
 
         project = Project(**project_data)
-
-        # Добавляем ключевые слова в объект проекта (для базы)
-        for kw_in in project_in.keywords:
-            keyword = Keyword(
-                keyword=kw_in.keyword,
-                region=kw_in.region,
-                price_top_1_3=kw_in.price_top_1_3,
-                price_top_4_5=kw_in.price_top_4_5,
-                price_top_6_10=kw_in.price_top_6_10,
-                is_check=True
-            )
-            project.keywords.append(keyword)
-
         db.add(project)
-
-        # 3. Пробуем добавить ключи в Topvisor через API
-
-        async def add_keywords_to_topvisor():
-
-            async with aiohttp.ClientSession() as session_http:
-                keywords_list = [kw.keyword for kw in project_in.keywords if kw.keyword]
-                if not keywords_list:
-                    return
-
-                keywords_str = "\n".join(keywords_list)
-
-                keywords_api_url = "https://api.topvisor.com/v2/json/add/keywords_2/keywords/import"
-                headers = {
-                    "User-Id": TOPVIZOR_ID,
-                    "Authorization": TOPVIZOR_API_KEY,
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "project_id": int(topvisor_project_id),  # Topvisor project ID как int
-                    "keywords": keywords_str
-                }
-
-                async with session_http.post(keywords_api_url, json=payload, headers=headers) as resp:
-                    if resp.status != 200:
-                        logging.error(f"Ошибка импорта ключей в Topvisor, статус: {resp.status}")
-                        raise HTTPException(status_code=500, detail="Ошибка импорта ключей в Topvisor")
-                    data = await resp.json()
-                    if "errors" in data:
-                        logging.error(f"Ошибка в ответе Topvisor при импорте ключей: {data['errors']}")
-                        raise HTTPException(status_code=500, detail="Ошибка импорта ключей в Topvisor")
-                    logging.info(f"Ключи успешно импортированы в Topvisor: {data}")
-
-        await add_keywords_to_topvisor()
-
-        # 4. После удачного добавления ключей коммитим транзакцию
         await db.commit()
         await db.refresh(project)
-        await db.refresh(project, attribute_names=["keywords"])
 
-        return project
+        # Повторно загружаем проект с группами
+        result = await db.execute(
+            select(Project)
+            .options(selectinload(Project.groups).selectinload(Group.keywords))
+            .where(Project.id == project.id)
+        )
+        project_with_relations = result.scalar_one()
 
-    except HTTPException:
-        raise
+        return project_with_relations
+
     except Exception as e:
         logging.error(f"Ошибка при создании проекта: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create project")
+
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -171,7 +99,9 @@ async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(
             select(Project)
-            .options(selectinload(Project.keywords))  # жёсткая загрузка ключевых слов
+            .options(
+                selectinload(Project.groups).selectinload(Group.keywords),
+            )
             .where(Project.id == project_id)
         )
         project = result.scalar_one_or_none()
@@ -192,10 +122,10 @@ async def update_project(
         db: AsyncSession = Depends(get_db)
 ):
     try:
-        # Загружаем проект с ключевыми словами
+        # Загружаем проект с группами и ключами
         result = await db.execute(
             select(Project)
-            .options(selectinload(Project.keywords))
+            .options(selectinload(Project.groups).selectinload(Group.keywords))
             .where(Project.id == project_id)
         )
         project = result.scalar_one_or_none()
@@ -203,74 +133,93 @@ async def update_project(
             raise HTTPException(status_code=404, detail="Project not found")
 
         update_data = project_in.dict(exclude_unset=True, by_alias=False)
-        keywords_update = update_data.pop("keywords", None)
 
         domain_changed = "domain" in update_data and update_data["domain"] != project.domain
+        new_domain = update_data.get("domain")
 
-        # Используем готовые функции из вашего утилитного модуля
-        if domain_changed:
-            new_domain = update_data["domain"]
-            try:
-                # Удаляем старый проект в Topvisor, если есть id
-                if project.topvisor_id:
-                    await delete_project_topvisor(project.topvisor_id)
+        async with aiohttp.ClientSession() as session_http:
+            if domain_changed:
+                # Удаляем все подпроекты и создаём заново
+                for group in project.groups:
+                    if group.topvisor_id:
+                        try:
+                            await delete_project_topvisor(group.topvisor_id)
+                        except Exception as e:
+                            logging.warning(f"Не удалось удалить проект Topvisor (group {group.title}): {e}")
 
-                # Создаём новый проект с новым доменом
-                new_topvisor_id = await create_project_in_topvisor(url=new_domain, name=new_domain)
-                if not new_topvisor_id:
-                    raise HTTPException(status_code=500, detail="Failed to create new project in Topvisor")
+                # Создаем новые проекты групп в Topvisor с новым domain
+                for group in project.groups:
+                    topvisor_project_name = f"{new_domain} - {group.title}"
+                    topvisor_group_id = await create_project_in_topvisor(session_http, url=new_domain,
+                                                                         name=topvisor_project_name)
+                    if not topvisor_group_id:
+                        logging.error(
+                            f"Не удалось создать проект в Topvisor для группы {group.title} после обновления домена")
+                        raise HTTPException(status_code=500,
+                                            detail=f"Ошибка создания проекта в Topvisor для группы {group.title} после обновления домена")
 
-                # Импортируем ключевые слова старого проекта
-                if project.keywords:
-                    keywords_list = [
-                        kw.keyword for kw in project.keywords
-                        if kw.keyword and isinstance(kw.keyword, str) and kw.keyword.strip()
-                    ]
+                    # Обновляем topvisor_id
+                    group.topvisor_id = int(topvisor_group_id)
+
+                    # Добавляем поисковую систему для проекта
+                    searcher_key = 0 if group.search_engine == SearchEngineEnum.yandex else 1
+                    searcher_result = await add_searcher_to_project(session_http, group.topvisor_id, searcher_key)
+                    if searcher_result is None:
+                        logging.error(f"Не удалось добавить поисковую систему в Topvisor для группы {group.title}")
+                        raise HTTPException(status_code=500,
+                                            detail=f"Ошибка добавления поисковой системы в Topvisor для группы {group.title}")
+
+                    # Получаем ключ региона
+                    region_key, _ = await get_region_key_index_static(group.region)
+                    if region_key is None:
+                        logging.error(f"Не удалось получить регион для группы {group.title}")
+                        raise HTTPException(status_code=500,
+                                            detail=f"Некорректный регион для группы {group.title}")
+
+                    # Добавляем регион
+                    region_result = await add_searcher_region(session_http, group.topvisor_id, searcher_key, region_key)
+                    if region_result is None:
+                        logging.error(f"Не удалось добавить регион в Topvisor для группы {group.title}")
+                        raise HTTPException(status_code=500,
+                                            detail=f"Ошибка добавления региона в Topvisor для группы {group.title}")
+
+                    # Импортируем ключевые слова
+                    keywords_list = [kw.keyword for kw in group.keywords if kw.keyword]
                     if keywords_list:
-                        await import_keywords(int(new_topvisor_id), keywords_list)
+                        import_response = await import_keywords(session_http, group.topvisor_id, keywords_list)
+                        if import_response is None or import_response.get("errors"):
+                            logging.error(f"Ошибка импорта ключей в Topvisor для группы {group.title}")
+                            raise HTTPException(status_code=500,
+                                                detail=f"Ошибка импорта ключей в Topvisor для группы {group.title}")
 
-                # Обновляем локальный проект (url и topvisor_id)
+                # Обновляем домен локально
                 project.domain = new_domain
-                project.topvisor_id = int(new_topvisor_id)
 
-            except Exception as e:
-                logging.error(f"Ошибка при обновлении url проекта в Topvisor: {e}")
-                raise HTTPException(status_code=500, detail="Failed to update project domain in Topvisor")
+            else:
+                # Если домен не меняется, можно обновить имя проекта в топвизоре
+                if "domain" in update_data and project.topvisor_id:
+                    try:
+                        await update_project_topvisor(project.topvisor_id, {"name": update_data["domain"]})
+                    except Exception as e:
+                        logging.error(f"Ошибка обновления имени проекта в Topvisor: {e}")
+                        raise HTTPException(status_code=500, detail="Failed to update project in Topvisor")
 
-        else:
-            # Если url не меняется
-            topvisor_update_data = {}
-            if "domain" in update_data:
-                # Можно обновлять только имя (name), т.к. url менять нельзя
-                topvisor_update_data["name"] = update_data["domain"]
-            # Обновите другие поля Topvisor, если нужно
+                # Просто обновляем локальные поля, кроме групп
+                if "domain" in update_data:
+                    project.domain = update_data["domain"]
 
-            if topvisor_update_data and project.topvisor_id:
-                try:
-                    await update_project_topvisor(project.topvisor_id, topvisor_update_data)
-                except Exception as e:
-                    logging.error(f"Ошибка обновления проекта в Topvisor: {e}")
-                    raise HTTPException(status_code=500, detail="Failed to update project in Topvisor")
+            # Обновляем другие поля, например schedule
+            if "schedule" in update_data:
+                project.schedule = update_data["schedule"]
 
-            # Локально обновляем остальные поля
-            for key, value in update_data.items():
-                setattr(project, key, value)
-
-        # При передаче ключевых слов - можно реализовать логику их обновления (если нужно)
-        if keywords_update is not None:
-            # Логика обновления ключевых слов в базе и Topvisor
-            # Например, можно удалить старые ключи и импортировать новые через import_keywords
-            # Или реализовать более тонкую синхронизацию
-            pass
-
-        await db.commit()
-        await db.refresh(project)
-        return project
+            await db.commit()
+            await db.refresh(project)
+            return project
 
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Failed to update project: {e}")
+        logging.error(f"Failed to update project: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update project")
 
 
@@ -280,158 +229,43 @@ async def delete_project(
         db: AsyncSession = Depends(get_db),
 ):
     try:
-        project = await db.get(Project, project_id)
+        # Загружаем проект вместе с группами (чтобы получить topvisor_id подпроектов)
+        result = await db.execute(
+            select(Project).options(selectinload(Project.groups)).where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # Удаляем проект в Topvisor, если ошибка - не удаляем из БД
-        await delete_project_topvisor(project.topvisor_id)
+        # Удаляем все подпроекты (группы) из Topvisor по их topvisor_id
+        for group in project.groups:
+            if group.topvisor_id:
+                try:
+                    await delete_project_topvisor(group.topvisor_id)
+                except Exception as e:
+                    logging.error(
+                        f"Не удалось удалить подпроект Topvisor с ID {group.topvisor_id} (группа {group.title}): {e}")
+                    # Можно решить, стоит ли прерывать или логировать и идти дальше
+                    raise HTTPException(status_code=500,
+                                        detail=f"Ошибка удаления подпроекта Topvisor для группы {group.title}")
 
+        # Удаляем сам проект (если у вас есть topvisor_id для главного проекта, можно удалить и его)
+        if project.topvisor_id:
+            try:
+                await delete_project_topvisor(project.topvisor_id)
+            except Exception as e:
+                logging.error(f"Не удалось удалить проект Topvisor с ID {project.topvisor_id}: {e}")
+                raise HTTPException(status_code=500, detail="Ошибка удаления проекта Topvisor")
+
+        # Удаляем проект из базы
         await db.delete(project)
         await db.commit()
         return
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Failed to delete project: {e}")
+        logging.error(f"Failed to delete project: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete project")
-
-
-# --- Ключевые слова и позиции ---
-
-
-@router.get("/{project_id}/keywords", response_model=List[KeywordOut])
-async def get_keywords(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    try:
-        result = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
-        keywords = result.scalars().all()
-        return keywords
-    except Exception as e:
-        logging.error("Failed to get keywords: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to get keywords")
-
-
-@router.post("/{project_id}/keywords", response_model=KeywordOut)
-async def create_keyword(project_id: UUID, keyword_in: KeywordCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        project = await db.get(Project, project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-
-        # Добавляем ключ в Topvisor и ждём успеха
-        response = await add_or_update_keyword_topvisor(project.topvisor_id, keyword_in.keyword)
-        if not response or "result" not in response:
-            logging.error(f"Не удалось добавить ключевое слово в Topvisor: {keyword_in.keyword}")
-            raise HTTPException(status_code=500, detail="Ошибка создания ключевого слова в Topvisor")
-
-        new_keyword = Keyword(
-            project_id=project_id,
-            keyword=keyword_in.keyword,
-            region=keyword_in.region,
-            price_top_1_3=keyword_in.price_top_1_3,
-            price_top_4_5=keyword_in.price_top_4_5,
-            price_top_6_10=keyword_in.price_top_6_10,
-            is_check=True
-        )
-        db.add(new_keyword)
-        await db.commit()
-        await db.refresh(new_keyword)
-
-        return new_keyword
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Ошибка при создании ключевого слова: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create keyword")
-
-
-@router.put("/{project_id}/keywords/{keyword_id}", response_model=KeywordOut)
-async def update_keyword(
-        project_id: UUID,
-        keyword_id: UUID,
-        keyword_in: KeywordUpdate,
-        db: AsyncSession = Depends(get_db)
-):
-    try:
-        # Загружаем ключевое слово вместе с проектом и топвизор id (жёсткая загрузка)
-        result = await db.execute(
-            select(Keyword)
-            .options(selectinload(Keyword.project))  # чтобы project был загружен, а не лениво
-            .where(Keyword.id == keyword_id)
-        )
-        keyword = result.scalar_one_or_none()
-
-        if keyword is None or keyword.project_id != project_id:
-            raise HTTPException(status_code=404, detail="Keyword not found in project")
-
-        old_keyword_text = keyword.keyword
-        update_data = keyword_in.dict(exclude_unset=True, by_alias=False)
-
-        # Обновляем поля объекта
-        for key, value in update_data.items():
-            if key != "id":
-                setattr(keyword, key, value)
-
-        # Сохраняем изменения в БД пока без вызова внешних API
-        await db.commit()
-        await db.refresh(keyword)
-
-        # Теперь безопасно получить topvisor_id (проект уже загружен)
-        topvisor_id = keyword.project.topvisor_id if keyword.project else None
-
-        # Если изменился ключ — синхронизируем с Topvisor
-        if "keyword" in update_data and update_data["keyword"] != old_keyword_text and topvisor_id:
-            try:
-                await delete_keyword_topvisor(topvisor_id, old_keyword_text)
-            except Exception as e:
-                logging.error(f"Ошибка удаления старого ключа в Topvisor: {e}")
-                raise HTTPException(status_code=500, detail="Failed to delete old keyword in Topvisor")
-
-            try:
-                await add_or_update_keyword_topvisor(topvisor_id, update_data["keyword"])
-            except Exception as e:
-                logging.error(f"Ошибка добавления нового ключа в Topvisor: {e}")
-                raise HTTPException(status_code=500, detail="Failed to add new keyword in Topvisor")
-
-        return keyword
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Failed to update keyword: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update keyword")
-
-
-@router.delete("/{project_id}/keywords/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_keyword(
-        project_id: UUID,
-        keyword_id: UUID,
-        db: AsyncSession = Depends(get_db)
-):
-    try:
-        # Загружаем ключевое слово с проектом вместе, чтобы избежать lazy load вне контекста
-        result = await db.execute(
-            select(Keyword)
-            .options(selectinload(Keyword.project))
-            .where(Keyword.id == keyword_id)
-        )
-        keyword = result.scalar_one_or_none()
-
-        if not keyword or keyword.project_id != project_id:
-            raise HTTPException(status_code=404, detail="Keyword not found in project")
-
-        # Удаляем ключ в Topvisor - если неудача, выброс Exception и не меняем БД
-        await delete_keyword_topvisor(keyword.project.topvisor_id, keyword.keyword)
-
-        await db.delete(keyword)
-        await db.commit()
-        return
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Failed to delete keyword: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete keyword")
 
 
 # --- Запуск обновления позиций (парсер) ---
@@ -451,215 +285,6 @@ async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db
         logger.error("Failed to check project: %s", e)
 
 
-# --- Получение позиций с фильтром по периоду ---
-@router.get("/{project_id}/positions", response_model=List[PositionOut])
-async def get_positions(
-        project_id: UUID,
-        period: Optional[str] = Query("week", regex="^(week|month|custom)$"),
-        offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
-        db: AsyncSession = Depends(get_db)
-):
-    try:
-        now = datetime.utcnow()
-
-        if period == "week":
-            # Находим понедельник текущей недели
-            current_weekday = now.weekday()  # 0 - понедельник, 6 - воскресенье
-            # Начало текущей недели (понедельник)
-            start_of_current_week = datetime(now.year, now.month, now.day) - timedelta(days=current_weekday)
-            # Сдвигаем на offset недель
-            start_date = start_of_current_week + timedelta(weeks=offset)
-            end_date = start_date + timedelta(weeks=1)
-
-        elif period == "month":
-            # Начало текущего месяца
-            start_of_current_month = datetime(now.year, now.month, 1)
-            # Рассчитываем месяц с учётом offset
-            month = (start_of_current_month.month - 1) + offset
-            year = start_of_current_month.year + month // 12
-            month = month % 12 + 1
-            start_date = datetime(year, month, 1)
-            # Начало следующего месяца
-            if month == 12:
-                end_date = datetime(year + 1, 1, 1)
-            else:
-                end_date = datetime(year, month + 1, 1)
-
-        else:
-            # Для произвольного периода можно вернуть все данные или добавить дополнительные параметры
-            start_date = None
-            end_date = None
-
-        stmt = select(Position).join(Position.keyword).where(Keyword.project_id == project_id)
-
-        if start_date and end_date:
-            stmt = stmt.where(Position.checked_at >= start_date, Position.checked_at < end_date)
-
-        stmt = stmt.options(selectinload(Position.keyword))
-
-        result = await db.execute(stmt)
-        positions = result.scalars().all()
-        return positions
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("Failed to get positions by period: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to get positions by period")
-
-
-@router.get("/{project_id}/positions/intervals", response_model=List[KeywordIntervals])
-async def get_positions_intervals(
-        project_id: UUID,
-        period: str = Query("month", regex="^(week|month|custom)$"),
-        offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
-        db: AsyncSession = Depends(get_db)
-):
-    try:
-        current_utc_date = datetime.utcnow().date()
-
-        # 1. Определяем границы периода (например, месяца)
-        if period == "month":
-            year = current_utc_date.year
-            month = current_utc_date.month + offset
-            while month > 12:
-                month -= 12
-                year += 1
-            while month < 1:
-                month += 12
-                year -= 1
-
-            period_display_start = date(year, month, 1)
-            if month == 12:
-                period_display_end = date(year + 1, 1, 1) - timedelta(days=1)
-            else:
-                period_display_end = date(year, month + 1, 1) - timedelta(days=1)
-
-        elif period == "week":
-            monday = current_utc_date - timedelta(days=current_utc_date.weekday())
-            period_display_start = monday + timedelta(weeks=offset)
-            period_display_end = period_display_start + timedelta(days=6)
-
-        else:
-            # Для custom — можно добавить параметры start_date и end_date
-            period_display_start = None
-            period_display_end = None
-
-        # 2. Получаем проект и дату его создания
-        project_result = await db.execute(select(Project).where(Project.id == project_id))
-        project = project_result.scalar_one_or_none()
-        if not project or not project.created_at:
-            raise HTTPException(status_code=404, detail="Project not found or creation date missing.")
-        project_start_date = project.created_at.date()
-
-        # 3. Генерируем все 14-дневные интервалы от даты создания до конца отображаемого периода
-        all_biweekly_intervals = []
-        interval_start = project_start_date
-        while interval_start <= period_display_end:
-            interval_end = interval_start + timedelta(days=13)
-            if interval_end > period_display_end:
-                interval_end = period_display_end
-            all_biweekly_intervals.append((interval_start, interval_end))
-            interval_start += timedelta(days=14)
-
-        # 4. Отбираем интервалы, пересекающиеся с отображаемым периодом
-        relevant_intervals = []
-        for start_dt, end_dt in all_biweekly_intervals:
-            if period_display_start and period_display_end:
-                # Добавляем условие, что интервал не проходит за текущую дату
-                if start_dt <= period_display_end and end_dt >= period_display_start and end_dt <= current_utc_date:
-                    display_start = max(start_dt, period_display_start)
-                    display_end = min(end_dt, period_display_end)
-
-                    relevant_intervals.append((start_dt, end_dt, display_start, display_end))
-            else:
-                if end_dt <= current_utc_date:
-                    relevant_intervals.append((start_dt, end_dt, start_dt, end_dt))
-
-        # 5. Получаем ключевые слова проекта
-        keywords_result = await db.execute(
-            select(Keyword).where(Keyword.project_id == project_id)
-        )
-        keywords = keywords_result.scalars().all()
-
-        if not keywords:
-            return []
-
-        keyword_ids = [k.id for k in keywords]
-        keywords_map = {k.id: k for k in keywords}
-
-        # 6. Загружаем позиции для ключевых слов в расширенном диапазоне дат
-        fetch_start_date = min(i[0] for i in relevant_intervals) - timedelta(days=14)
-        fetch_end_date = max(i[1] for i in relevant_intervals)
-        positions_result = await db.execute(
-            select(Position)
-            .where(
-                Position.keyword_id.in_(keyword_ids),
-                Position.checked_at >= fetch_start_date,
-                Position.checked_at <= fetch_end_date + timedelta(days=1)
-            )
-        )
-        positions = positions_result.scalars().all()
-
-        # 7. Создаем маппинг для быстрого доступа к позициям
-        positions_map = {}
-        for pos in positions:
-            positions_map.setdefault(pos.keyword_id, {})[pos.checked_at.date()] = pos
-
-        # 8. Считаем суммы по интервалам для каждого ключевого слова
-        results = []
-
-        keywords_map = {k.id: k for k in keywords}
-
-        for k_id in keyword_ids:
-            keyword = keywords_map[k_id]
-            intervals_data = []
-            for start_dt, end_dt, display_start, display_end in relevant_intervals:
-                days_top3 = 0
-                days_top5 = 0
-                days_top10 = 0
-
-                current_date = start_dt
-                while current_date <= end_dt:
-                    pos = positions_map.get(k_id, {}).get(current_date)
-                    if pos and pos.position is not None:
-                        if 1 <= pos.position <= 3:
-                            days_top3 += 1
-                        elif 4 <= pos.position <= 5:
-                            days_top5 += 1
-                        elif 6 <= pos.position <= 10:
-                            days_top10 += 1
-                    current_date += timedelta(days=1)
-
-                cost_top3 = days_top3 * (keyword.price_top_1_3 or 0)
-                cost_top5 = days_top5 * (keyword.price_top_4_5 or 0)
-                cost_top10 = days_top10 * (keyword.price_top_6_10 or 0)
-
-                intervals_data.append(
-                    IntervalSumOut(
-                        start_date=start_dt,
-                        end_date=end_dt,
-                        display_start_date=display_start,
-                        display_end_date=display_end,
-                        sum_cost=cost_top3 + cost_top5 + cost_top10,
-                        days_top3=days_top3,
-                        cost_top3=keyword.price_top_1_3,
-                        days_top5=days_top5,
-                        cost_top5=keyword.price_top_4_5,
-                        days_top10=days_top10,
-                        cost_top10=keyword.price_top_6_10,
-                    )
-                )
-            results.append(KeywordIntervals(keyword_id=k_id, intervals=intervals_data))
-
-        return results
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Failed to get positions intervals: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
 # --- Экспорт в Excel ---
 
 
@@ -676,20 +301,20 @@ async def export_positions_excel(
 
         project = await db.get(Project, project_id)
         if not project:
-            logger.error("Project not found")
+            logging.error("Project not found")
             raise HTTPException(status_code=404, detail="Проект не найден")
 
-        # Запрос позиций с загрузкой связанных ключевых слов и проектов
+        # Запрос позиций с join и фильтрацией по project_id через Group и Keyword
         stmt = (
             select(Position)
             .join(Position.keyword)
-            .join(Keyword.project)
-            .options(
-                selectinload(Position.keyword).selectinload(Keyword.project)
-            )
-            .where(Project.id == project_id)
+            .join(Keyword.group)
+            .where(Keyword.group.has(Group.project_id == project_id))
             .where(Position.checked_at >= datetime.combine(start_date, datetime.min.time()))
             .where(Position.checked_at <= datetime.combine(end_date, datetime.max.time()))
+            .options(
+                selectinload(Position.keyword).selectinload(Keyword.group).selectinload(Group.project)
+            )
             .order_by(Position.checked_at)
         )
 
@@ -697,17 +322,20 @@ async def export_positions_excel(
         positions = result.scalars().all()
 
         if not positions:
-            logger.error("Positions not found")
+            logging.error("Positions not found")
             raise HTTPException(status_code=404, detail="Данные за указанный период не найдены")
 
         data = []
         for pos in positions:
-            project = pos.keyword.project
+            project = pos.keyword.group.project
+            group = pos.keyword.group
+            keyword = pos.keyword
             data.append({
-                "Проект": project.domain,
-                "Поисковая система": project.search_engine.value if project.search_engine else None,
-                "Ключевое слово": pos.keyword.keyword,
-                "Город": pos.keyword.region,
+                "Проект": project.domain if project else None,
+                "Поисковая система": group.search_engine.value if group and group.search_engine else None,
+                "Группа": group.title if group else None,
+                "Ключевое слово": keyword.keyword,
+                "Город": group.region if group else None,
                 "Дата": pos.checked_at.strftime("%Y-%m-%d"),
                 "Позиция": pos.position,
                 "Динамика": pos.previous_position,
@@ -737,7 +365,7 @@ async def export_positions_excel(
     except HTTPException:
         raise
     except Exception as e:
-        logging.error("Failed to export positions excel: %s", e)
+        logging.error(f"Failed to export positions excel: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to export positions excel")
 
 
@@ -763,7 +391,11 @@ async def client_view(
         # Получаем проект по уникальной клиентской ссылке, вместе с ключевыми словами
         result = await db.execute(
             select(Project)
-            .options(selectinload(Project.keywords).selectinload(Keyword.positions))
+            .options(
+                selectinload(Project.groups)  # подгружаем группы проекта
+                .selectinload(Group.keywords)  # у групп подгружаем ключевые слова
+                .selectinload(Keyword.positions)  # у ключевых слов подгружаем позиции
+            )
             .where(Project.client_link == client_link)
         )
         project = result.scalar_one_or_none()
@@ -772,8 +404,12 @@ async def client_view(
 
         # Фильтруем позиции по периоду (если задан start_date)
         if start_date:
-            for keyword in project.keywords:
-                keyword.positions = [pos for pos in keyword.positions if pos.checked_at >= start_date]
+            for group in project.groups:
+                for keyword in group.keywords:
+                    if hasattr(keyword, 'positions') and keyword.positions is not None:
+                        keyword.positions = [
+                            pos for pos in keyword.positions if pos.checked_at >= start_date
+                        ]
 
         # Возвращаем проект с отфильтрованными позициями
         return project

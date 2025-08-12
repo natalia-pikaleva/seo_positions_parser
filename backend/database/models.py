@@ -28,8 +28,7 @@ class TrendEnum(str, enum.Enum):
 
 class Keyword(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    region = Column(String, nullable=False)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    group_id = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
     keyword = Column(String, nullable=False)
 
     price_top_1_3 = Column(Integer, default=0, nullable=False)
@@ -39,26 +38,42 @@ class Keyword(Base):
     is_check = Column(Boolean, default=True)
 
     positions = relationship("Position", back_populates="keyword")
-    project = relationship("Project", back_populates="keywords")
+    group = relationship("Group", back_populates="keywords")
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint('project_id', 'keyword', 'region', name='uq_project_keyword_region'),
+        UniqueConstraint('group_id', 'keyword', name='uq_group_keyword'),
+    )
+
+class Group(Base):
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    region = Column(String, nullable=False)
+    search_engine = Column(Enum(SearchEngineEnum), default=SearchEngineEnum.yandex, nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
+
+    project = relationship("Project", back_populates="groups")
+    keywords = relationship("Keyword",
+                            order_by=[desc(Keyword.is_check), Keyword.keyword],
+                            lazy="selectin",
+                            back_populates="group", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint('project_id', 'title', 'region', name='uq_project_group_region'),
     )
 
 
 class Project(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     domain = Column(String, nullable=False)
-    search_engine = Column(Enum(SearchEngineEnum), default=SearchEngineEnum.yandex, nullable=False)
     schedule = Column(Enum(ScheduleEnum), default=ScheduleEnum.daily, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     client_link = Column(String, unique=True, nullable=False)
     topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
 
-    keywords = relationship("Keyword",
-                            order_by=[desc(Keyword.is_check), Keyword.keyword],
-                            lazy="selectin",
-                            back_populates="project", cascade="all, delete-orphan")
+    groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
+
 
 
 class Position(Base):
@@ -69,7 +84,8 @@ class Position(Base):
         nullable=True
     )
     checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    position = Column(Integer, nullable=True)  # null если нет в ТОП-100
+    position = Column(Integer, nullable=True)
+    frequency = Column(Integer, nullable=True)
     previous_position = Column(Integer, nullable=True)
     cost = Column(Integer, default=0, nullable=False)
     trend = Column(Enum(TrendEnum), default=TrendEnum.stable, nullable=False)
