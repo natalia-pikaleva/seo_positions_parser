@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, TrendingUp, Minus, Copy, Calendar, Star, Edit2 } from 'lucide-react';
 
-import { Project, FilterOptions, Position } from '../types';
+import { Group, FilterOptions, Position } from '../types';
 import {
   fetchPositions,
   fetchPositionsIntervals,
   createKeyword,
   updateKeyword,
   deleteKeyword,
-  exportPositionsExcel,
-  runProjectParsing
+  runProjectParsing,
+  fetchGroup
 } from '../utils/api';
-import { getPositionColor, getTrendIcon, getTrendColor, generateClientLink } from '../utils/positionUtils';
+import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { KeywordManager } from './KeywordManager';
-import { EditProjectMenu } from './EditProjectMenu';
-import { ExportModal } from './ExportModal';
+import { EditGroupMenu } from './EditGroupMenu';
 
 // Импортируем выделенные компоненты
 import { PositionFilters } from './PositionFilters';
@@ -23,9 +22,12 @@ import { PositionTableView } from './PositionTableView';
 import { ExcelLikeTableView } from './ExcelLikeTableView'
 
 interface PositionTableProps {
-  project: Project;
-  onProjectLoaded: (project: Project) => void;
-  onUpdateProject: (project: Project) => void;
+  group: Group;
+  onGroupLoaded: (group: Group) => void;
+  onUpdateGroup: (group: Group) => void;
+  isClientView?: boolean;
+  domain?: string;
+  groups: Group[]
 }
 
 function getDatesForCurrentMonth(offset: number): Date[] {
@@ -87,45 +89,24 @@ function generateBiweeklyIntervalsFromStart(startDate: Date, endDate: Date): { s
 
 
 export const PositionTable: React.FC<PositionTableProps> = ({
-	project,
-    onProjectLoaded,
-    onUpdateProject,
-  }) => {
+  group,
+  onGroupLoaded,
+  onUpdateGroup,
+  isClientView = false,
+  domain,
+  groups
+}) => {
 	  const [periodOffset, setPeriodOffset] = useState(0);
 	  const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
 	  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
-	  const [editableProject, setEditableProject] = useState<Project>(project);
-	  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
-	  const [isExportOpen, setIsExportOpen] = useState(false);
-	  const [isExporting, setIsExporting] = useState(false);
-	  const [projectCreatedAt, setProjectCreatedAt] = useState<Date | null>(null);
+	  const [editableGroup, setEditableGroup] = useState<Group>(group);
+	  const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
+	  const [groupCreatedAt, setGroupCreatedAt] = useState<Date | null>(null);
 	  const [keywordFilter, setKeywordFilter] = useState('');
 	  const [positions, setPositions] = useState<Position[]>([]);
-	  const [showClientLink, setShowClientLink] = useState(false);
 	  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
 	  const [parsing, setParsing] = useState(false);
       const [parsingMsg, setParsingMsg] = useState<string | null>(null);
-
-
-
-
-	  const copyClientLink = async () => {
-	    try {
-	      const fullLink = generateClientLink(project.clientLink);
-	      await navigator.clipboard.writeText(fullLink);
-	      setShowClientLink(true);
-	      setTimeout(() => setShowClientLink(false), 2000); // через 2 секунды вернём обратно
-	    } catch (err) {
-	      console.error('Не удалось скопировать ссылку', err);
-	    }
-	  };
-
-	  useEffect(() => {
-	    if (project?.createdAt) {
-	      setProjectCreatedAt(new Date(project.createdAt));
-	    }
-	    setEditableProject(project);
-	  }, [project]);
 
 	  const dates = useMemo(() => {
 		  if (filter.period === 'week') {
@@ -149,35 +130,37 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 
 
 	  const biweeklyIntervals = useMemo(() => {
-		  if (filter.period !== 'month' || !projectCreatedAt) return [];
+		  if (filter.period !== 'month' || !groupCreatedAt) return [];
 
 		  const monthStart = dates[0];
 		  const monthEnd = dates[dates.length - 1];
 
 		  // Генерируем интервалы от даты старта до конца текущего месяца
-		  const allIntervals = generateBiweeklyIntervalsFromStart(projectCreatedAt, monthEnd);
+		  const allIntervals = generateBiweeklyIntervalsFromStart(groupCreatedAt, monthEnd);
 
 		  // Фильтруем интервалы, чтобы оставить только те, что пересекаются с текущим месяцем
 		  return allIntervals.filter(interval =>
 		    interval.endDate >= monthStart && interval.startDate <= monthEnd
 		  );
-		}, [filter.period, projectCreatedAt, dates]);
+		}, [filter.period, groupCreatedAt, dates]);
 
-
+  useEffect(() => {
+	  setEditableGroup(group);
+	}, [group]);
 
 	// Загрузка позиций
   useEffect(() => {
-    if (!project?.id) return;
+    if (!group?.id) return;
     async function loadPositions() {
       try {
-        const data = await fetchPositions(project.id, filter.period, periodOffset);
+        const data = await fetchPositions(group.id, filter.period, periodOffset);
         setPositions(data);
       } catch (error) {
         console.error('Ошибка загрузки позиций', error);
       }
     }
     loadPositions();
-  }, [project?.id, filter.period, periodOffset]);
+  }, [group?.id, filter.period, periodOffset]);
 
   interface IntervalSumData {
 	  daysTop3: number;
@@ -191,10 +174,10 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 
   // Загрузка агрегированных сумм по интервалам
   async function loadIntervalSums() {
-	  if (!project?.id) return;
+	  if (!group?.id) return;
 
 	  try {
-	    const data = await fetchPositionsIntervals(project.id, filter.period, periodOffset);
+	    const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
 
 	    interface IntervalSumData {
 	      daysTop3: number;
@@ -258,7 +241,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 
 	useEffect(() => {
 	  loadIntervalSums();
-	}, [project?.id, filter.period, periodOffset]);
+	}, [group?.id, filter.period, periodOffset]);
 
 
   // Вычисление последнего дня месяца с учётом periodOffset
@@ -338,10 +321,10 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 
   // Фильтрация ключевых слов
   const filteredKeywords = useMemo(() => {
-    return editableProject.keywords.filter(k =>
+    return editableGroup.keywords.filter(k =>
       k.keyword.toLowerCase().includes(keywordFilter.toLowerCase())
     );
-  }, [editableProject.keywords, keywordFilter]);
+  }, [editableGroup.keywords, keywordFilter]);
 
   // Подсчёт статистики для PositionStats
   const uniqueKeywordsWithTop1to3 = useMemo(() => {
@@ -382,71 +365,32 @@ console.log('dateGroups:', extendedDateGroups);
 		  <div className="flex items-center gap-3">
 		    <BarChart3 className="w-6 h-6 text-blue-600" />
             <div>
-		      <h2 className="text-2xl font-bold text-gray-900">{editableProject.domain}</h2>
-		      <p className="text-gray-600">{editableProject.searchEngine}</p>
+		      <h2 className="text-2xl font-bold text-gray-900 flex flex-wrap items-center gap-2">
+			    <span>{domain}</span>
+			    <span className="hidden sm:inline text-gray-500">•</span>
+			    <span className="w-full sm:w-auto">{editableGroup.title}</span>
+			  </h2>
+
+
+		      <p className="text-gray-600">{editableGroup.searchEngine}
+		      <span className="sm:inline text-gray-500"> • </span> {editableGroup.region}
+		      </p>
 		    </div>
 		  </div>
 		  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full md:w-auto">
-		    <button
-		      onClick={copyClientLink}
-		      className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-		    >
-		      <Copy className="w-4 h-4" />
-		      {showClientLink ? 'Скопировано!' : 'Ссылка для клиента'}
-		    </button>
-		    <button
-			  onClick={() => setIsEditProjectOpen(true)}
-			  className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-			>
-			  <Edit2 className="w-4 h-4" />
-			  Редактировать проект
-			</button>
-
-		    <button
-		      onClick={() => setIsExportOpen(true)}
-		      className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-		      disabled={isExporting}
-		    >
-		      <Calendar className="w-4 h-4" />
-		      {isExporting ? 'Экспортируем...' : 'Экспорт в Excel'}
-		    </button>
-		    <button
-			  onClick={async () => {
-			    setParsing(true);
-			    setParsingMsg(null);
-			    try {
-			      const res = await runProjectParsing(project.id);
-			      setParsingMsg(res.message || 'Парсер запущен');
-			    } catch (e: any) {
-			      setParsingMsg(
-			        e?.message?.includes('not found')
-			          ? 'Проект не найден'
-			          : e?.message || 'Ошибка запуска парсинга'
-			      );
-			    } finally {
-			      setParsing(false);
-			      setTimeout(() => setParsingMsg(null), 3000);
-			    }
-			  }}
-			  className={`w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors ${parsing ? 'opacity-60 cursor-wait' : ''}`}
-			  disabled={parsing}
-			  title="Запустить обновление позиций">
-			  <TrendingUp className="w-4 h-4" />
-			  {parsing ? 'Запуск...' : 'Обновить позиции'}
-			</button>
-		  </div>
-		  {parsingMsg && (
-			  <div className="mt-1 text-sm text-blue-700">{parsingMsg}</div>
+		    {!isClientView && (
+			  <button
+			    onClick={() => setIsEditGroupOpen(true)}
+			    className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+			  >
+			    <Edit2 className="w-4 h-4" />
+			    Редактировать группу
+			  </button>
 			)}
+
+		  </div>
 		</div>
 
-        {/* Статистика */}
-        {/*<PositionStats
-          top1to3={uniqueKeywordsWithTop1to3.size}
-          top4to5={uniqueKeywordsWithTop4to5.size}
-          top6to10={uniqueKeywordsWithTop6to10.size}
-          totalKeywords={editableProject.keywords.length}
-        />*/}
 
         {/* Фильтры */}
         <PositionFilters
@@ -460,7 +404,7 @@ console.log('dateGroups:', extendedDateGroups);
 
         {/* Таблица позиций */}
         {/*<PositionTableView
-          editableProject={editableProject}
+          editableGroup={editableGroup}
           filteredKeywords={filteredKeywords}
           positionsMap={positionsMap}
           dates={dates}
@@ -474,9 +418,9 @@ console.log('dateGroups:', extendedDateGroups);
         {/* Таблица данных в виде Эксель */}
         <div className="flex-shrink-0 h-1/2 min-h-0 overflow-auto">
 	        <ExcelLikeTableView
-			  domain={editableProject.domain}
+			  domain={editableGroup.domain}
 			  positions={positions}
-			  keywords={editableProject.keywords}
+			  keywords={editableGroup.keywords}
 			  intervalSums={intervalSums}
 			  dateGroups={extendedDateGroups}
 			/>
@@ -484,63 +428,51 @@ console.log('dateGroups:', extendedDateGroups);
 
         {/* Остальные компоненты */}
         <div className="mb-6 flex flex-col h-full min-h-0">
-	        <KeywordManager
-	          keywords={editableProject.keywords}
-	          onAddKeyword={async (keywordData) => {
-	            const newKeyword = await createKeyword(project.id, keywordData);
-	            onProjectLoaded({ ...editableProject, keywords: [...editableProject.keywords, newKeyword] });
-	          }}
-	          onUpdateKeyword={async (id, keywordData) => {
-	            const updatedKeyword = await updateKeyword(project.id, id, keywordData);
-	            const updatedKeywords = editableProject.keywords.map(k => k.id === id ? updatedKeyword : k);
-	            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
-	          }}
-	          onDeleteKeyword={async (id) => {
-	            await deleteKeyword(project.id, id);
-	            const updatedKeywords = editableProject.keywords.filter(k => k.id !== id);
-	            onProjectLoaded({ ...editableProject, keywords: updatedKeywords });
-	          }}
-	        />
-	    </div>
+		  {!isClientView && (
+			  <KeywordManager
+			  keywords={editableGroup.keywords}
+			  groups={groups || []}
+			  onAddKeyword={async (keywordData) => {
+			    const newKeyword = await createKeyword(editableGroup.id, keywordData);
+			    onGroupLoaded({ ...editableGroup, keywords: [...editableGroup.keywords, newKeyword] });
+			    setEditableGroup(prev => prev ? {...prev, keywords: [...prev.keywords, newKeyword]} : prev);
+			  }}
+			  onUpdateKeyword={async (id, keywordData) => {
+				  const updatedKeyword = await updateKeyword(editableGroup.id, id, keywordData);
 
-        {isEditProjectOpen && (
-          <EditProjectMenu
-            project={editableProject}
-            onClose={() => setIsEditProjectOpen(false)}
-            onSave={(updatedProject) => {
-              setEditableProject(updatedProject);
-              onUpdateProject(updatedProject);
-              setIsEditProjectOpen(false);
-            }}
-          />
-        )}
+				  // Сделать fetch обновлённой группы с бэкенда
+				  const refreshedGroup = await fetchGroup(editableGroup.id);
 
-        {isExportOpen && (
-          <ExportModal
-            onClose={() => setIsExportOpen(false)}
-            onExport={async (startDate, endDate) => {
-              setIsExporting(true);
-              try {
-                const blob = await exportPositionsExcel(project.id, startDate, endDate);
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `positions_${project.id}_${startDate}_${endDate}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-                setIsExportOpen(false);
-              } catch (error) {
-                alert(error instanceof Error ? error.message : 'Ошибка при экспорте');
-              } finally {
-                setIsExporting(false);
-              }
+				  setEditableGroup(refreshedGroup);
+				  onGroupLoaded(refreshedGroup);
+				}}
+
+			  onDeleteKeyword={async (id) => {
+			    await deleteKeyword(editableGroup.id, id);
+			    const updatedKeywords = editableGroup.keywords.filter(k => k.id !== id);
+			    onGroupLoaded({ ...editableGroup, keywords: updatedKeywords });
+			    setEditableGroup(prev => prev ? {...prev, keywords: updatedKeywords} : prev);
+			  }}
+			/>
+
+		  )}
+		</div>
+
+
+        {!isClientView && isEditGroupOpen && (
+          <EditGroupMenu
+            group={editableGroup}
+            onClose={() => setIsEditGroupOpen(false)}
+            onSave={(updatedGroup) => {
+              setEditableGroup(updatedGroup);
+              onUpdateGroup(updatedGroup);
+              setIsEditGroupOpen(false);
             }}
-            isExporting={isExporting}
           />
         )}
       </div>
     </div>
   );
 };
+
+export default PositionTable;

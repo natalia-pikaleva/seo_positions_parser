@@ -16,6 +16,7 @@ interface PositionOut {
   checked_at: string;
   position?: number | null;
   cost: number;
+  frequency?: number | null;
 }
 
 interface Keyword {
@@ -196,7 +197,6 @@ export function ExcelLikeTableView({
       id: k.id,
       serial: index + 1,
       keyword: k.keyword,
-      region: k.region || '-',
       cost_top3: k.price_top_1_3 ?? '-',
       cost_top5: k.price_top_4_5 ?? '-',
       cost_top10: k.price_top_6_10 ?? '-',
@@ -214,7 +214,6 @@ export function ExcelLikeTableView({
   const infoColumns: GridColDef[] = [
 	  { field: 'serial', headerName: 'Номер п/п', width: 110, headerClassName: 'column-header' },
 	  { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
-	  { field: 'region', headerName: 'Регион', width: 150, headerClassName: 'column-header' },
 	  { field: 'cost_top3', headerName: 'Стоимость ТОП3, руб', width: 150, type: 'number', headerClassName: 'column-header' },
 	  { field: 'cost_top5', headerName: 'Стоимость ТОП5, руб', width: 150, type: 'number', headerClassName: 'column-header' },
 	  { field: 'cost_top10', headerName: 'Стоимость ТОП10, руб', width: 150, type: 'number', headerClassName: 'column-header' },
@@ -237,7 +236,6 @@ export function ExcelLikeTableView({
         >
           <div><strong>№:</strong> {row.serial}</div>
           <div><strong>Ключевой запрос:</strong> {row.keyword}</div>
-          <div><strong>Регион:</strong> {row.region}</div>
           <div><strong>Стоимость ТОП3:</strong> {row.cost_top3}</div>
           <div><strong>Стоимость ТОП5:</strong> {row.cost_top5}</div>
           <div><strong>Стоимость ТОП10:</strong> {row.cost_top10}</div>
@@ -271,6 +269,17 @@ export function ExcelLikeTableView({
     return `${day}.${month}`;
   }
 
+  const frequencySortComparator = (v1: number | string, v2: number | string) => {
+	  const n1 = typeof v1 === 'number' ? v1 : NaN;
+	  const n2 = typeof v2 === 'number' ? v2 : NaN;
+
+	  if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
+	  if (!isNaN(n1) && isNaN(n2)) return -1; // число перед "-"
+	  if (isNaN(n1) && !isNaN(n2)) return 1;  // "-" после числа
+	  return 0;                               // оба "-"
+	};
+
+
   function getColumnsForDate(dateStr: string): GridColDef[] {
 	  return [
 	    { field: 'keyword', headerName: 'Ключевой запрос', width: 250, headerClassName: 'column-header' },
@@ -303,33 +312,17 @@ export function ExcelLikeTableView({
 	        return 0;
 	      }
 	    },
+	    {
+	      field: 'frequency',
+	      headerName: 'Частотность',
+	      width: 120,
+	      type: 'number',
+	      headerClassName: 'column-header',
+          sortComparator: frequencySortComparator,
+	    },
 	    { field: 'cost', headerName: 'Стоимость', width: 130, type: 'number', headerClassName: 'column-header' },
 	  ];
 	}
-
-
-  // Сформировать строки данных по дате
-  const getRowsForDate = (dateStr: string) => {
-    return keywords.map((k) => {
-      const key = `${k.id}|${dateStr}`;
-      const pos = positionMap[key];
-      return {
-        id: k.id,
-        keyword: k.keyword,
-        position: pos?.position ?? '-',
-        cost: pos?.cost ?? '-',
-      };
-    });
-  };
-
-  // Итоговая стоимость за дату
-  const getTotalCostForDate = (dateStr: string) => {
-    return keywords.reduce((sum, k) => {
-      const key = `${k.id}|${dateStr}`;
-      const cost = positionMap[key]?.cost;
-      return sum + (typeof cost === 'number' ? cost : 0);
-    }, 0);
-  };
 
   // Колонки для вкладок с итогами за день
   function getColumnsForDateWithTotal(dateStr: string, totalCost: number): GridColDef[] {
@@ -350,6 +343,14 @@ export function ExcelLikeTableView({
 	        if (isNaN(n1) && !isNaN(n2)) return 1;
 	        return 0;
 	      }
+	    },
+	    {
+	      field: 'frequency',
+	      headerName: 'Частотность',
+	      width: 120,
+	      type: 'number',
+	      headerClassName: 'column-header',
+          sortComparator: frequencySortComparator,
 	    },
 	    {
 	      field: 'cost',
@@ -375,11 +376,44 @@ export function ExcelLikeTableView({
 	      sortable: false,
 	      filterable: false,
 	      disableColumnMenu: true,
-	      headerClassName: 'summary-column-header'
+	      headerClassName: 'summary-column-header',
 	    },
 	  ];
 	}
 
+  // Сформировать строки данных по дате
+  const getRowsForDate = (dateStr: string) => {
+	  return keywords.map((k) => {
+	    const key = `${k.id}|${dateStr}`;
+	    const pos = positionMap[key];
+	    return {
+	      id: k.id,
+	      keyword: k.keyword,
+	      position: pos?.position ?? '-',
+	      frequency: pos?.frequency ?? '-',  // Добавляем частотность
+	      cost: pos?.cost ?? '-',
+	    };
+	  });
+	};
+
+
+  // Итоговая стоимость за дату
+  const getTotalCostForDate = (dateStr: string) => {
+    return keywords.reduce((sum, k) => {
+      const key = `${k.id}|${dateStr}`;
+      const cost = positionMap[key]?.cost;
+      return sum + (typeof cost === 'number' ? cost : 0);
+    }, 0);
+  };
+
+  const positionMapByDateAndKeywordId = useMemo(() => {
+	  const map: Record<string, PositionOut> = {};
+	  positions.forEach((p) => {
+	    const key = `${p.keyword_id}|${formatDate(p.checked_at)}`;
+	    map[key] = p;
+	  });
+	  return map;
+	}, [positions]);
 
 
   // Вертикальные карточки для таба с конкретной датой
@@ -388,14 +422,17 @@ export function ExcelLikeTableView({
 
 	  // Получаем массив карточек с позициями
 	  let cards = keywords.map(k => {
-	    const pos = positions.find(p => p.keyword_id === k.id && formatDate(p.checked_at) === dateStr);
-	    return {
-	      ...k,
-	      position: pos?.position ?? null,
-	      posValue: pos?.position, // для сортировки
-	      cost: pos?.cost ?? '-',
-	    };
-	  });
+		  const key = `${k.id}|${dateStr}`;
+		  const pos = positionMapByDateAndKeywordId[key];
+		  return {
+		    ...k,
+		    position: pos?.position ?? null,
+		    posValue: pos?.position,
+		    cost: pos?.cost ?? '-',
+		    frequency: pos?.frequency ?? '-',
+		  };
+		});
+
 
 	  // Сортируем если требуется
 	  if (sortMode === 'asc') {
@@ -449,8 +486,9 @@ export function ExcelLikeTableView({
 		        }}
 		      >
 		        <div><strong>Ключевой запрос: {k.keyword} </strong></div>
-		        <div>Позиция: {k.position ?? '-'}</div>
-		        <div>Стоимость: {k.cost ?? '-'}</div>
+			    <div>Позиция: {k.position ?? '-'}</div>
+			    <div>Частотность: {k.frequency ?? '-'}</div> {/* Новая строка */}
+			    <div>Стоимость: {k.cost ?? '-'}</div>
 		      </div>
 		    ))}
 		  </div>

@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Keyword, KeywordUpdate } from '../types';
+import { Keyword, KeywordUpdate, Group } from '../types';
 import { enableKeywordCheck, disableKeywordCheck } from '../utils/api';
 
 interface KeywordManagerProps {
   keywords: Keyword[];
+  groups: Group[]; // передаем список групп проекта для выбора
   onAddKeyword: (keywordData: Omit<Keyword, 'id'>) => Promise<void>;
   onUpdateKeyword: (id: string, keywordData: Partial<KeywordUpdate>) => Promise<void>;
   onDeleteKeyword: (id: string) => Promise<void>;
 }
-
-const REGIONS = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург'];
 
 function PriceInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
   const [inputValue, setInputValue] = useState<string>(String(value));
@@ -50,6 +49,7 @@ function PriceInput({ value, onChange }: { value: number; onChange: (val: number
 
 export const KeywordManager: React.FC<KeywordManagerProps> = ({
   keywords,
+  groups,
   onAddKeyword,
   onUpdateKeyword,
   onDeleteKeyword,
@@ -57,18 +57,20 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
   const [editingKeyword, setEditingKeyword] = useState<Keyword | null>(null);
   const [formState, setFormState] = useState<Omit<Keyword, 'id'>>({
     keyword: '',
-    region: 'Москва',
     price_top_1_3: 0,
     price_top_4_5: 0,
     price_top_6_10: 0,
   });
   const [isAdding, setIsAdding] = useState(false);
 
+  const [keywordToMove, setKeywordToMove] = useState<Keyword | null>(null);
+  const [targetGroupId, setTargetGroupId] = useState<string>('');
+  const [showMoveConfirm, setShowMoveConfirm] = useState(false);
+
   useEffect(() => {
     if (editingKeyword) {
       setFormState({
         keyword: editingKeyword.keyword,
-        region: editingKeyword.region || 'Москва',
         price_top_1_3: editingKeyword.price_top_1_3 || 0,
         price_top_4_5: editingKeyword.price_top_4_5 || 0,
         price_top_6_10: editingKeyword.price_top_6_10 || 0,
@@ -76,12 +78,48 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
     }
   }, [editingKeyword]);
 
+  const startMoveKeyword = (keyword: Keyword) => {
+    setKeywordToMove(keyword);
+    setTargetGroupId('');
+    setShowMoveConfirm(false);
+  };
+
+  // Обработчик выбора группы для переноса
+  const handleGroupChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setTargetGroupId(e.target.value);
+  };
+
+  // Подтверждение переноса
+  const confirmMove = () => {
+    if (!targetGroupId) {
+      alert('Пожалуйста, выберите группу для переноса');
+      return;
+    }
+    setShowMoveConfirm(true);
+  };
+
+  // Отправка запроса на перенос группы
+  const performMove = async () => {
+    if (!keywordToMove) return;
+    try {
+      // Вызываем onUpdateKeyword, меняя group_id на targetGroupId
+      await onUpdateKeyword(keywordToMove.id, {
+        group_id: targetGroupId,
+      });
+      alert('Ключевое слово успешно перенесено');
+      setKeywordToMove(null);
+      setTargetGroupId('');
+      setShowMoveConfirm(false);
+    } catch (error: any) {
+      alert(error.message || 'Ошибка при переносе ключевого слова');
+    }
+  };
+
   const startAdd = () => {
     setIsAdding(true);
     setEditingKeyword(null);
     setFormState({
       keyword: '',
-      region: 'Москва',
       price_top_1_3: 0,
       price_top_4_5: 0,
       price_top_6_10: 0,
@@ -98,7 +136,6 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
     setIsAdding(false);
     setFormState({
       keyword: '',
-      region: 'Москва',
       price_top_1_3: 0,
       price_top_4_5: 0,
       price_top_6_10: 0,
@@ -116,7 +153,6 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       if (isAdding) {
         await onAddKeyword({
           keyword: trimmed,
-          region: formState.region,
           price_top_1_3: formState.price_top_1_3,
           price_top_4_5: formState.price_top_4_5,
           price_top_6_10: formState.price_top_6_10,
@@ -124,7 +160,6 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       } else if (editingKeyword) {
         await onUpdateKeyword(editingKeyword.id, {
           keyword: trimmed,
-          region: formState.region,
           price_top_1_3: formState.price_top_1_3,
           price_top_4_5: formState.price_top_4_5,
           price_top_6_10: formState.price_top_6_10,
@@ -154,25 +189,20 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 
       {(isAdding || editingKeyword) && (
         <div className="space-y-4 mb-4 p-4 border border-gray-300 rounded bg-gray-50">
-          <input
-            type="text"
-            className="border border-gray-300 rounded px-3 py-2 w-full"
-            value={formState.keyword}
-            onChange={e => setFormState({ ...formState, keyword: e.target.value })}
-            placeholder="Введите ключевое слово"
-          />
+          {isAdding ? (
+			<input
+			    type="text"
+			    className="border border-gray-300 rounded px-3 py-2 w-full"
+			    value={formState.keyword}
+			    onChange={e => setFormState({ ...formState, keyword: e.target.value })}
+			    placeholder="Введите ключевое слово"
+			  />
+			) : (
+			  <div className="px-3 py-2 bg-gray-100 rounded border border-gray-300 w-full select-none">
+			    {formState.keyword}
+			  </div>
+			)}
 
-          <select
-            value={formState.region}
-            onChange={e => setFormState({ ...formState, region: e.target.value })}
-            className="border border-gray-300 rounded px-3 py-2 w-full"
-          >
-            {REGIONS.map(region => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -231,7 +261,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 				  <div>
 				    <div className="font-medium">{keyword.keyword}</div>
 				    <div className="text-sm text-gray-600">
-				      Регион: {keyword.region} | Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
+				      Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
 				    </div>
 				  </div>
 				  <div className="flex flex-row flex-wrap gap-2 items-center mt-2 sm:mt-0">
@@ -269,10 +299,85 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 				>
 				  {keyword.is_check ? 'Отключить' : 'Включить'}
 				</button>
+				<button
+	                onClick={() => startMoveKeyword(keyword)}
+	                className="text-indigo-600 hover:text-indigo-800"
+	                title="Перенести ключевой запрос"
+	              >
+	                Перенести ключевой запрос в другую группу
+                </button>
 		      </div>
 		    </li>
 		  ))}
 		</ul>
+
+		{/* Модалка выбора группы и подтверждения переноса */}
+      {keywordToMove && !showMoveConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div
+            className="bg-white rounded p-6 max-w-md w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold mb-4">Выберите группу для переноса ключевого слова</h3>
+            <select
+              className="w-full border border-gray-300 rounded px-3 py-2 mb-4"
+              value={targetGroupId}
+              onChange={handleGroupChange}
+            >
+              <option value="">-- Выберите группу --</option>
+              {groups
+                .filter(g => g.id !== keywordToMove.group_id) // исключаем текущую группу
+                .map(group => (
+                  <option key={group.id} value={group.id}>
+                    {group.title}
+                  </option>
+                ))}
+            </select>
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => setKeywordToMove(null)}
+                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmMove}
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                disabled={!targetGroupId}
+              >
+                Далее
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка подтверждения переноса */}
+      {keywordToMove && showMoveConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div
+            className="bg-white rounded p-6 max-w-md w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold mb-4">Подтверждение переноса</h3>
+            <p>Вы уверены, что хотите перенести ключевое слово &laquo;{keywordToMove.keyword}&raquo; в группу &laquo;{groups.find(g => g.id === targetGroupId)?.title}&raquo;?</p>
+            <div className="flex justify-end gap-4 mt-4">
+              <button
+                onClick={() => setShowMoveConfirm(false)}
+                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Назад
+              </button>
+              <button
+                onClick={performMove}
+                className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+              >
+                Перенести
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -1,38 +1,58 @@
 import React, { useState } from 'react';
 import { BarChart, Users, TrendingUp, Calendar, Plus, RefreshCw } from 'lucide-react';
-import { Project } from '../types';
+import { Project, Group } from '../types';
 import { API_BASE } from '../utils/config';
+import { ProjectGroups } from './ProjectGroups'; // Ваш компонент групп проекта
+import PositionTable from './PositionTable';
+import { fetchProject } from '../utils/api';
 
 interface DashboardProps {
   projects: Project[];
   onCreateProject: () => void;
-  onSelectProject: (project: Project) => void;
+  refreshProjects: () => Promise<void>;
+  isClientView?: boolean;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject, onSelectProject }) => {
-  const totalKeywords = projects.reduce((sum, project) => sum + project.keywords.length, 0);
-  const totalCost = projects.reduce((sum, project) => 
-    sum + project.keywords.reduce((keywordSum, keyword) => keywordSum + (keyword.cost || 0), 0), 0
-  );
-  const activeProjects = projects.length;
-
-  // Состояния для модального окна и статуса задачи
+export const Dashboard: React.FC<DashboardProps> = ({
+  projects,
+  onCreateProject,
+  refreshProjects,
+  isClientView = false,
+}) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [taskStatus, setTaskStatus] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+
+  // Статистика
+  const totalKeywords = projects.reduce(
+    (sum, project) => sum + project.groups.reduce((gSum, group) => gSum + group.keywords.length, 0),
+    0
+  );
+
+  const totalCost = projects.reduce(
+    (sum, project) =>
+      sum +
+      project.groups.reduce(
+        (gSum, group) => gSum + group.keywords.reduce((kSum, k) => kSum + (k.cost || 0), 0),
+        0
+      ),
+    0
+  );
+
+  const activeProjects = projects.length;
 
   // Функция запроса статуса задачи
   const fetchTaskStatus = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Запрос без параметра date_str для даты сегодня, можно добавить при необходимости
       const response = await fetch(`${API_BASE}/task-status/`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
       if (!response.ok) {
         const errorText = await response.text();
@@ -45,7 +65,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
       setTaskStatus(null);
     } finally {
       setLoading(false);
-      setModalOpen(true);  // Открываем окно с результатом
+      setModalOpen(true);
     }
   };
 
@@ -56,89 +76,176 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
     setError(null);
   };
 
+  // При клике на проект открываем страницу с группами
+  const handleSelectProject = (project: Project) => {
+    setSelectedProject(project);
+    setSelectedGroup(null);
+  };
+
+  // При клике на группу (если нужно, например, показывать позиции)
+  const handleSelectGroup = (group: Group) => {
+    setSelectedGroup(group);
+  };
+
+  // Возврат к списку проектов
+  const handleBackToProjects = () => {
+    setSelectedProject(null);
+    setSelectedGroup(null);
+  };
+
+  // Возврат к списку групп (если открыт выбранный group)
+  const handleBackToGroups = () => {
+    setSelectedGroup(null);
+  };
+
+  // Обновление списка проектов после изменений
+  const reloadProjects = async () => {
+    await refreshProjects();
+  };
+
+  const reloadSelectedProject = async () => {
+	  if (!selectedProject) return;
+	  try {
+	    const updatedProject = await fetchProject(selectedProject.id);
+	    setSelectedProject(updatedProject);
+	    return updatedProject;
+	  } catch (error) {
+	    console.error("Ошибка обновления проекта:", error);
+	    return null;
+	  }
+	};
+
+
+  // --- Рендер ---
+
+  // Если выбрана группа
+  if (selectedGroup && selectedProject) {
+	  return (
+	    <div className="p-6 max-w-7xl mx-auto">
+	      <button
+	        onClick={handleBackToGroups}
+	        className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
+	      >
+	        ← Назад к группам
+	      </button>
+	      <PositionTable
+				  group={selectedGroup}
+				  project={selectedProject}
+				  onBack={handleBackToGroups}
+				  isClientView={isClientView}
+				  domain={selectedProject.domain}
+				  groups={selectedProject.groups}
+				  onGroupLoaded={async (updatedGroup) => {
+					  const updatedProject = await reloadSelectedProject();
+					  if (updatedProject) {
+					    setSelectedProject(updatedProject);
+					  }
+					}}
+
+				  onUpdateGroup={async (updatedGroup) => {
+					  const updatedProject = await reloadSelectedProject();
+					  if (updatedProject) {
+					    setSelectedProject(updatedProject);
+					  }
+					}}
+
+				/>
+	    </div>
+	  );
+	}
+
+  // Если выбран проект — отображаем группы
+  if (selectedProject) {
+    return (
+      <ProjectGroups
+		  project={selectedProject}
+		  onBack={handleBackToProjects}
+		  onSelectGroup={handleSelectGroup}
+		  refreshProject={reloadSelectedProject}
+		  onProjectGroupLoaded={async () => {
+		    const updatedProject = await reloadSelectedProject();
+		    if (updatedProject) setSelectedProject(updatedProject);
+		  }}
+		/>
+
+
+    );
+  }
+
+  // Основной дашборд проектов
   return (
-    <div className="space-y-6">
-      {/* Заголовок + кнопка */}
-	  <div className="flex flex-col sm:flex-row
-                items-center sm:items-center
-                justify-center sm:justify-between
-                gap-4 text-center sm:text-left">
-		  <div>
-		    <h1 className="text-3xl font-bold text-gray-900">SEO Позиции</h1>
-		    <p className="text-gray-600">Мониторинг позиций сайтов в поисковых системах</p>
-		  </div>
+    <div className="space-y-6 max-w-7xl mx-auto p-6">
 
-		  <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
-           <button
-             onClick={fetchTaskStatus}
-             className="flex items-center gap-2 px-5 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-           >
-             <RefreshCw className="w-5 h-5" />
-             Проверить статус задачи
-           </button>
+      {/* Заголовок и кнопки */}
+      <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">SEO Позиции</h1>
+          <p className="text-gray-600">Мониторинг позиций сайтов в поисковых системах</p>
+        </div>
 
-           <button
-             onClick={onCreateProject}
-             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-           >
-             <Plus className="w-5 h-5" />
-             Создать проект
-           </button>
-         </div>
-	  </div>
+        <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
+          <button
+            onClick={fetchTaskStatus}
+            className="flex items-center gap-2 px-5 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+          >
+            <RefreshCw className="w-5 h-5" />
+            Проверить статус задачи
+          </button>
 
+          <button
+            onClick={onCreateProject}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Создать проект
+          </button>
+        </div>
+      </div>
 
       {/* Статистика */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-lg">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <BarChart className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Активные проекты</p>
-              <p className="text-2xl font-bold text-gray-900">{activeProjects}</p>
-            </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
+        <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <BarChart className="w-6 h-6 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Активные проекты</p>
+            <p className="text-2xl font-bold text-gray-900">{activeProjects}</p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-lg">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Ключевые запросы</p>
-              <p className="text-2xl font-bold text-gray-900">{totalKeywords}</p>
-            </div>
+        <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <TrendingUp className="w-6 h-6 text-green-600" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Ключевые запросы</p>
+            <p className="text-2xl font-bold text-gray-900">{totalKeywords}</p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-lg">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Users className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Общая стоимость</p>
-              <p className="text-2xl font-bold text-gray-900">{totalCost.toLocaleString()} ₽</p>
-            </div>
+        {/*<div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+          <div className="p-2 bg-yellow-100 rounded-lg">
+            <Users className="w-6 h-6 text-yellow-600" />
           </div>
-        </div>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Общая стоимость</p>
+            <p className="text-2xl font-bold text-gray-900">{totalCost.toLocaleString()} ₽</p>
+          </div>
+        </div>*/}
 
-        <div className="bg-white p-6 rounded-lg shadow-lg">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Calendar className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Последняя проверка</p>
-              <p className="text-sm font-bold text-gray-900">Сегодня, 12:00</p>
-            </div>
+        <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <Calendar className="w-6 h-6 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Последняя проверка</p>
+            <p className="text-sm font-bold text-gray-900">Сегодня, 12:00</p>
           </div>
         </div>
       </div>
 
+      {/* Список проектов */}
       <div className="bg-white rounded-lg shadow-lg">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">Проекты</h2>
@@ -160,26 +267,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map((project) => (
+              {projects.map(project => (
                 <div
                   key={project.id}
                   className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => onSelectProject(project)}
+                  onClick={() => handleSelectProject(project)}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">{project.domain}</h3>
                   </div>
                   <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>{project.keywords.length} запросов</span>
-                    <span>{project.searchEngine}</span>
+                    <span>
+                      {project.groups.reduce((sum, group) => sum + group.keywords.length, 0)} запросов
+                    </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <div className="text-sm">
+                    {/*<div className="text-sm">
                       <span className="text-gray-600">Стоимость: </span>
                       <span className="font-medium text-gray-900">
-                        {project.keywords.reduce((sum, k) => sum + (k.cost || 0), 0).toLocaleString()} ₽
+                        {project.groups
+                          .reduce(
+                            (pSum, group) =>
+                              pSum + group.keywords.reduce((kSum, k) => kSum + (k.cost || 0), 0),
+                            0
+                          )
+                          .toLocaleString()}{' '}
+                        ₽
                       </span>
-                    </div>
+                    </div>*/}
                     <div className="text-xs text-gray-500">
                       {new Date(project.createdAt).toLocaleDateString('ru-RU')}
                     </div>
@@ -191,8 +306,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
         </div>
       </div>
 
-
-    {/* Модальное окно */}
+      {/* Модальное окно статуса задачи */}
       {modalOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
@@ -213,62 +327,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onCreateProject,
             <h2 className="text-xl font-semibold mb-4">Статус задачи</h2>
 
             {loading ? (
-			  <p>Загрузка данных...</p>
-			) : error ? (
-			  <p className="text-red-600">Ошибка: {error}</p>
-			) : taskStatus ? (
-			  <div>
-			    <p><b>Статус:</b> {taskStatus.status}</p>
-			    <p><b>Сообщение:</b> {taskStatus.message || 'Нет сообщения'}</p>
+              <p>Загрузка данных...</p>
+            ) : error ? (
+              <p className="text-red-600">Ошибка: {error}</p>
+            ) : taskStatus ? (
+              <div>
+                <p><b>Статус:</b> {taskStatus.status}</p>
+                <p><b>Сообщение:</b> {taskStatus.message || 'Нет сообщения'}</p>
 
-			    {/* Пользовательский дружественный вывод при успешном или частично успешном результате */}
-			    {taskStatus.status === 'completed' && taskStatus.result && (
-			      <div className="mt-4 text-sm max-h-60 overflow-auto rounded bg-gray-50 p-3">
-			        {/* Если нет ошибок — показываем сообщение об успешном выполнении */}
-			        {(!taskStatus.result.failed_projects?.length && !taskStatus.result.access_denied_domains?.length) ? (
-			          <p>Все проекты обработаны успешно.</p>
-			        ) : (
-			          <>
-			            {/* Если есть неудачные проекты */}
-			            {taskStatus.result.failed_projects?.length > 0 && (
-			              <div className="mb-3">
-			                <p>Не удалось обновить позиции для следующих проектов:</p>
-			                <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
-			                  {taskStatus.result.failed_projects.map((proj: string, index: number) => (
-			                    <li key={index}>{proj}</li>
-			                  ))}
-			                </ul>
-			              </div>
-			            )}
+                {taskStatus.status === 'completed' && taskStatus.result && (
+                  <div className="mt-4 text-sm max-h-60 overflow-auto rounded bg-gray-50 p-3">
+                    {(!taskStatus.result.failed_projects?.length && !taskStatus.result.access_denied_domains?.length) ? (
+                      <p>Все проекты обработаны успешно.</p>
+                    ) : (
+                      <>
+                        {taskStatus.result.failed_projects?.length > 0 && (
+                          <div className="mb-3">
+                            <p>Не удалось обновить позиции для следующих проектов:</p>
+                            <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
+                              {taskStatus.result.failed_projects.map((proj: string, i: number) => (
+                                <li key={i}>{proj}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {taskStatus.result.access_denied_domains?.length > 0 && (
+                          <div>
+                            <p>Доступ запрещён для следующих проектов:</p>
+                            <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
+                              {taskStatus.result.access_denied_domains.map((domain: string, i: number) => (
+                                <li key={i}>{domain}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
-			            {/* Если есть проекты с доступом отказано */}
-			            {taskStatus.result.access_denied_domains?.length > 0 && (
-			              <div>
-			                <p>Доступ запрещён для следующих проектов:</p>
-			                <ul className="list-disc list-inside ml-4 max-h-32 overflow-auto">
-			                  {taskStatus.result.access_denied_domains.map((domain: string, index: number) => (
-			                    <li key={index}>{domain}</li>
-			                  ))}
-			                </ul>
-			              </div>
-			            )}
-			          </>
-			        )}
-			      </div>
-			    )}
-
-			    {/* Ошибка выполнения */}
-			    {taskStatus.status === 'failed' && taskStatus.error_message && (
-			      <div className="mt-4 text-red-600 font-medium">
-			        <p>Ошибка выполнения задачи:</p>
-			        <pre>{taskStatus.error_message}</pre>
-			      </div>
-			    )}
-			  </div>
-			) : (
-			  <p>Данных о задаче нет</p>
-			)}
-
+                {taskStatus.status === 'failed' && taskStatus.error_message && (
+                  <div className="mt-4 text-red-600 font-medium">
+                    <p>Ошибка выполнения задачи:</p>
+                    <pre>{taskStatus.error_message}</pre>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p>Данных о задаче нет</p>
+            )}
           </div>
         </div>
       )}
