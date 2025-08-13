@@ -13,7 +13,7 @@ selenium
 2captcha-python
 passlib
 python-jose[cryptography]
-bcrypt
+bcrypt==4.0.1
 pandas
 openpyxl
 uvicorn

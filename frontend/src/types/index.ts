@@ -81,3 +81,17 @@ export interface Project {
   clientLink: string;
   groups: Group[];
 }
+
+interface UserOut {
+  id: number;
+  username: string;
+  fullname?: string;
+  role: string;
+  projects?: { id: string; domain: string }[];
+}
+
+interface UserUpdateRequest {
+  fullname?: string | null;
+  role?: string | null;
+  project_ids?: string[] | null;
+}

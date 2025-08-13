@@ -3,15 +3,14 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, load_only
-from sqlalchemy import desc
+from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
 from database.db_init import get_db
-from database.models import Project, Keyword, Position, Group, SearchEngineEnum
+from database.models import Project, Keyword, Position, Group, SearchEngineEnum, User, UserRole
 from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
                              ProjectOut, ClientProjectOut, PositionOut,
                              KeywordCreate, KeywordUpdate, KeywordOut,
@@ -19,6 +18,7 @@ from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
                              GroupCreate, GroupUpdate)
 
 from services.api_utils import generate_client_link
+from services.auth_utils import get_current_user
 from services.topvizor_task import main_task
 from services.topvizor_utils import (create_project_in_topvisor,
                                      add_or_update_keyword_topvisor,
@@ -43,28 +43,48 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-
-
 # --- Проекты ---
 
+from fastapi import Depends, HTTPException, status
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+
+
 @router.get("/", response_model=List[ProjectOut])
-async def get_projects(db: AsyncSession = Depends(get_db)):
+async def get_projects(
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
     try:
-        result = await db.execute(
-            select(Project).options(
-                selectinload(Project.groups)
+        logger.info(f"User role: {current_user.role}")
+        if current_user.role == UserRole.admin:
+            # Админ видит все проекты
+            result = await db.execute(
+                select(Project).options(selectinload(Project.groups))
             )
-        )
-        projects = result.scalars().all()
-        return projects
+            projects = result.scalars().all()
+            return projects
+
+        elif current_user.role == UserRole.manager:
+            # Менеджер видит только свои проекты
+            # Подгружаем проекты с группами
+            await db.refresh(current_user, ['projects'])  # загружаем связанные проекты
+            # Подгружаем группы проектов менеджера
+            for project in current_user.projects:
+                await db.refresh(project, ['groups'])
+            return current_user.projects
+
+        else:
+            raise HTTPException(status_code=403, detail="Access denied")
     except Exception as e:
         logging.error("Failed to get projects: %s", e)
         raise HTTPException(status_code=500, detail="Failed to get projects")
 
 
 @router.post("/", response_model=ProjectOut, status_code=201)
-async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(project_in: ProjectCreate,
+                         db: AsyncSession = Depends(get_db),
+                         current_user: User = Depends(get_current_user)):
     try:
         project_data = project_in.dict(exclude={"groups"}, by_alias=False)
 
@@ -78,7 +98,14 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
         await db.commit()
         await db.refresh(project)
 
-        # Повторно загружаем проект с группами
+        if current_user.role != UserRole.admin:
+            # Привязываем проект к менеджеру
+            current_user.projects.append(project)
+            db.add(current_user)
+            await db.commit()
+            await db.refresh(current_user)
+
+            # Повторно загружаем проект с группами и ключевыми словами
         result = await db.execute(
             select(Project)
             .options(selectinload(Project.groups).selectinload(Group.keywords))
@@ -91,7 +118,6 @@ async def create_project(project_in: ProjectCreate, db: AsyncSession = Depends(g
     except Exception as e:
         logging.error(f"Ошибка при создании проекта: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create project")
-
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -227,7 +253,11 @@ async def update_project(
 async def delete_project(
         project_id: UUID,
         db: AsyncSession = Depends(get_db),
-):
+        current_user: User = Depends(get_current_user),
+        ):
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Удалить проект может только администратор")
+
     try:
         # Загружаем проект вместе с группами (чтобы получить topvisor_id подпроектов)
         result = await db.execute(

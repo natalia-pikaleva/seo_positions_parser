@@ -192,6 +192,56 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 
 
+# --- Users ---
+
+class UserRole(str, Enum):
+    admin = "admin"
+    employee = "manager"
+
 class ManagerCreateRequest(BaseModel):
     username: str
-    temporary_password: str | None = None
+    temporary_password: Optional[str] = None
+    fullname: Optional[str] = None
+    role: UserRole
+
+
+class UpdateFullnameRequest(BaseModel):
+    fullname: str
+
+
+class UpdateRoleRequest(BaseModel):
+    role: str  # ожидается строка из enum UserRole
+
+
+class AssignProjectRequest(BaseModel):
+    project_id: str  # UUID в строковом виде
+
+
+class UserUpdateRequest(BaseModel):
+    fullname: Optional[str] = None
+    role: Optional[str] = None  # стоит проверять в enum
+    project_ids: Optional[List[str]] = None  # Список UUID проектов для
+
+
+class ProjectOutForUser(BaseModel):
+    id: UUID
+    domain: constr(min_length=1)
+    created_at: datetime = Field(..., alias="createdAt")
+    client_link: str = Field(..., alias="clientLink")
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True
+    )
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    fullname: Optional[str]
+    role: str
+    projects: Optional[List[ProjectOutForUser]] = []
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )

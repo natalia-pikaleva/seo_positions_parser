@@ -1,13 +1,20 @@
-import { Project, ProjectCreate, KeywordUpdate, Group, GroupCreate, GroupUpdate } from './types';
+import { Project, ProjectCreate, KeywordUpdate, Group,
+	GroupCreate, GroupUpdate, UserOut, UserUpdateRequest  } from './types';
 
 import { API_BASE } from './config';
 
 // -- проекты
-export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/projects`);
+export async function fetchProjects(token: string): Promise<Project[]> {
+  const res = await fetch(`${API_BASE}/projects`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
   if (!res.ok) throw new Error('Failed to fetch projects');
   return res.json();
 }
+
 
 export async function fetchProject(id: string): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects/${id}`);
@@ -15,15 +22,23 @@ export async function fetchProject(id: string): Promise<Project> {
   return res.json();
 }
 
-export async function createProject(project: ProjectCreate): Promise<Project> {
+export async function createProject(
+  project: ProjectCreate,
+  token: string
+): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`, // передаем токен
+    },
     body: JSON.stringify(project),
   });
+
   if (!res.ok) throw new Error('Failed to create project');
   return res.json();
 }
+
 
 export async function updateProject(id: string, project: Partial<ProjectCreate>): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects/${id}`, {
@@ -33,6 +48,29 @@ export async function updateProject(id: string, project: Partial<ProjectCreate>)
   });
   if (!res.ok) throw new Error('Failed to update project');
   return res.json();
+}
+
+export async function deleteProject(projectId: string, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`, // передаем токен
+    },
+  });
+
+  if (!res.ok) {
+    // Можно попытаться получить тело с ошибкой, если нужно
+    let errorMsg = 'Failed to delete project';
+    try {
+      const errData = await res.json();
+      errorMsg = errData.detail || errorMsg;
+    } catch {
+      // игнорируем ошибку парсинга
+    }
+    throw new Error(errorMsg);
+  }
+
+  // Если 204 No Content, возвращаем void
 }
 
 export async function runProjectParsing(projectId: string): Promise<{message: string}> {
@@ -255,16 +293,27 @@ export async function loginUser(username: string, password: string): Promise<Log
 
 export interface RegisterManagerRequest {
   username: string;
-  temporary_password?: string; // по умолчанию можно не передавать, тогда backend ставит пароль равным username
+  temporary_password?: string;
+  fullname: string;
+  role: 'admin' | 'employee';
 }
 
+export interface RegisterResponse {
+  access_token: string;
+  token_type: string;
+  is_temporary_password: boolean;
+  temporary_password?: string;
+}
 
-export async function registerManager(data: RegisterManagerRequest, token: string): Promise<void> {
+export async function registerManager(
+  data: RegisterManagerRequest,
+  token: string
+): Promise<RegisterResponse> {
   const response = await fetch(`${API_BASE}/auth/managers`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,  // передаём токен
+      'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -273,7 +322,11 @@ export async function registerManager(data: RegisterManagerRequest, token: strin
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Ошибка регистрации менеджера');
   }
+
+  const responseData: RegisterResponse = await response.json();
+  return responseData;
 }
+
 
 export async function changePassword(token: string, data: { old_password: string; new_password: string }) {
   const response = await fetch(`${API_BASE}/auth/change-password`, {
@@ -370,5 +423,104 @@ export async function fetchTaskStatusByDate(dateStr?: string): Promise<any> {
   }
 
   const data = await response.json();
+  return data;
+}
+
+
+interface UserOut {
+  id: number;
+  username: string;
+  fullname?: string;
+  role: string;
+  projects?: { id: string; domain: string }[];
+}
+
+interface UserUpdateRequest {
+  fullname?: string | null;
+  role?: string | null;
+  project_ids?: string[] | null;
+}
+
+// Функция для получения списка пользователей с проектами
+export async function fetchUsersWithProjects(token: string): Promise<UserOut[]> {
+  const res = await fetch(`${API_BASE}/users`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Ошибка получения пользователей: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return data;
+}
+
+// Обновление пользователя по ID
+export async function updateUser(
+  userId: number,
+  updateData: UserUpdateRequest,
+  token: string,
+): Promise<UserOut> {
+  const res = await fetch(`${API_BASE}/users/${userId}/update`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updateData),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(
+      errData.detail || `Ошибка обновления пользователя: ${res.statusText}`,
+    );
+  }
+
+  const data = await res.json();
+  return data;
+}
+
+// Удаление пользователя по ID
+export async function deleteUser(userId: number, token: string): Promise<{ msg: string }> {
+  const res = await fetch(`${API_BASE}/users/${userId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(
+      errData.detail || `Ошибка удаления пользователя: ${res.statusText}`,
+    );
+  }
+
+  return await res.json();
+}
+
+// Сброс временного пароля пользователя
+export async function resetTemporaryPassword(
+  userId: number,
+  token: string,
+): Promise<{ msg: string; temp_password: string }> {
+  const res = await fetch(`${API_BASE}/users/${userId}/reset-temporary-password`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(
+      errData.detail || `Ошибка сброса пароля: ${res.statusText}`,
+    );
+  }
+
+  const data = await res.json();
   return data;
 }

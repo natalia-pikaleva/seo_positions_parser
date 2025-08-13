@@ -11,6 +11,7 @@ interface DashboardProps {
   onCreateProject: () => void;
   refreshProjects: () => Promise<void>;
   isClientView?: boolean;
+  onDeleteProject: (projectId: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -18,6 +19,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onCreateProject,
   refreshProjects,
   isClientView = false,
+  onDeleteProject,
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [taskStatus, setTaskStatus] = useState<any>(null);
@@ -275,6 +277,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">{project.domain}</h3>
+				    <button
+				        onClick={(e) => {
+				          e.stopPropagation(); // чтобы клик по кнопке не срабатывал как выбор проекта
+				          if (window.confirm(`Вы уверены, что хотите удалить проект "${project.domain}"? После удаления восстановление данных проекта будет невозможно!`)) {
+				            onDeleteProject(project.id);
+				          }
+				        }}
+				        className="text-red-600 hover:text-red-800 text-sm font-semibold"
+				        type="button"
+				        aria-label={`Удалить проект ${project.domain}`}
+				      >
+				        Удалить
+				    </button>
                   </div>
                   <div className="flex items-center justify-between text-sm text-gray-600">
                     <span>

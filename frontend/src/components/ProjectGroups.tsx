@@ -280,71 +280,83 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
 
       <div className="mb-6 flex justify-between items-center">
 		  {!isClientView && (
-		    <div className="flex flex-wrap gap-4 items-center justify-center md:justify-end w-full">
-		      <button
-		        onClick={openNewGroupModal}
-		        className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-		      >
-		        <Plus className="w-5 h-5" />
-		        Добавить группу
-		      </button>
+		    <div className="mb-6 w-full">
+			  <div
+			    className="
+			      grid grid-cols-2 gap-4 items-center justify-center
+			      md:flex md:flex-wrap md:gap-4 md:justify-end md:items-center
+			    "
+			  >
+			    <button
+			      onClick={openNewGroupModal}
+			      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm w-full md:w-auto md:text-base"
+			    >
+			      <Plus className="w-5 h-5" />
+			      Добавить группу
+			    </button>
 
-		      <button
-		        onClick={() => setIsExportOpen(true)}
-		        disabled={isExporting}
-		        className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-60"
-		      >
-		        {isExporting ? (
-		          <>
-		            <RefreshCw className="w-5 h-5 animate-spin" />
-		            Экспортируем...
-		          </>
-		        ) : (
-		          <>
-		            <Calendar className="w-5 h-5" />
-		            Экспорт в Excel
-		          </>
-		        )}
-		      </button>
+			    <button
+			      onClick={() => setIsExportOpen(true)}
+			      disabled={isExporting}
+			      className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-60 text-sm w-full md:w-auto md:text-base"
+			    >
+			      {isExporting ? (
+			        <>
+			          <RefreshCw className="w-5 h-5 animate-spin" />
+			          Экспортируем...
+			        </>
+			      ) : (
+			        <>
+			          <Calendar className="w-5 h-5" />
+			          Экспорт в Excel
+			        </>
+			      )}
+			    </button>
 
-		      <button
-		        onClick={copyClientLink}
-		        className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-		      >
-		        <Copy className="w-5 h-5" />
-		        {showClientLink ? 'Скопировано!' : 'Ссылка для клиента'}
-		      </button>
-		      <button
-				    onClick={async () => {
-				    setParsing(true);
-				    setParsingMsg(null);
-				    try {
-				      const res = await runProjectParsing(project.id);
-				      setParsingMsg(res.message || 'Парсер запущен');
-				    } catch (e: any) {
-				      setParsingMsg(
-				        e?.message?.includes('not found')
-				          ? 'Проект не найден'
-				          : e?.message || 'Ошибка запуска парсинга'
-				      );
-				    } finally {
-				      setParsing(false);
-				      setTimeout(() => setParsingMsg(null), 3000);
-				    }
-				  }}
-				  className={`w-auto flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors ${parsing ? 'opacity-60 cursor-wait' : ''}`}
-				  disabled={parsing}
-				  title="Запустить обновление позиций"
-				>
-				  <TrendingUp className="w-4 h-4" />
-				  {parsing ? 'Запуск...' : 'Обновить позиции'}
-			  </button>
+			    <button
+			      onClick={copyClientLink}
+			      className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm w-full md:w-auto md:text-base"
+			    >
+			      <Copy className="w-5 h-5" />
+			      {showClientLink ? 'Скопировано!' : 'Ссылка для клиента'}
+			    </button>
+
+			    <button
+			      onClick={async () => {
+			        setParsing(true);
+			        setParsingMsg(null);
+			        try {
+			          const res = await runProjectParsing(project.id);
+			          setParsingMsg(res.message || 'Парсер запущен');
+			        } catch (e: any) {
+			          setParsingMsg(
+			            e?.message?.includes('not found')
+			              ? 'Проект не найден'
+			              : e?.message || 'Ошибка запуска парсинга'
+			          );
+			        } finally {
+			          setParsing(false);
+			          setTimeout(() => setParsingMsg(null), 3000);
+			        }
+			      }}
+			      className={`flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors text-sm w-full md:w-auto md:text-base ${
+			        parsing ? 'opacity-60 cursor-wait' : ''
+			      }`}
+			      disabled={parsing}
+			      title="Запустить обновление позиций"
+			    >
+			      <TrendingUp className="w-4 h-4" />
+			      {parsing ? 'Запуск...' : 'Обновить позиции'}
+			    </button>
+			  </div>
+
 			  <div>
-			      {parsingMsg && (
-				    <div className="mt-1 text-sm text-blue-700">{parsingMsg}</div>
-				  )}
-		      </div>
-		    </div>
+			    {parsingMsg && (
+			      <div className="mt-1 text-sm text-blue-700">{parsingMsg}</div>
+			    )}
+			  </div>
+			</div>
+
 		  )}
 
           {error && <p className="mb-4 text-red-600">{error}</p>}
