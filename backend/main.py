@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.db_init import get_db, create_tables
 from routers.projects_router import router as projects_router
 from routers.groups_router import router as groups_router
+from routers.users_router import router as users_router
 
 from routers.auth_router import router as auth_router
 from routers.task_status_router import router as task_status_router
@@ -50,6 +51,7 @@ app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
 app.include_router(groups_router, prefix="/api/groups", tags=["groups"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(task_status_router, prefix="/api/task-status", tags=["tasks"])
+app.include_router(users_router, prefix="/api/users", tags=["users"])
 
 
 # Создание таблиц (запускайте один раз)
@@ -59,6 +61,7 @@ async def startup():
 
 
 from sqlalchemy import or_
+
 
 async def create_new_group_for_all_projects(db: AsyncSession):
     try:
@@ -128,7 +131,8 @@ async def create_new_group_for_all_projects(db: AsyncSession):
                 topvisor_group_id = await create_project_in_topvisor(session_http, url=domain,
                                                                      name=topvisor_project_name)
                 if not topvisor_group_id:
-                    logging.error(f"Не удалось создать проект в Topvisor для группы '{new_group.title}' в проекте {domain}")
+                    logging.error(
+                        f"Не удалось создать проект в Topvisor для группы '{new_group.title}' в проекте {domain}")
                     raise RuntimeError(f"Ошибка создания проекта в Topvisor для группы '{new_group.title}'")
 
                 new_group.topvisor_id = int(topvisor_group_id)
@@ -147,7 +151,8 @@ async def create_new_group_for_all_projects(db: AsyncSession):
                     raise RuntimeError(f"Регион не найден")
                 region_key, _ = region_key_index
 
-                region_resp = await add_searcher_region(session_http, new_group.topvisor_id, searcher_key, region_key, region_lang="ru")
+                region_resp = await add_searcher_region(session_http, new_group.topvisor_id, searcher_key, region_key,
+                                                        region_lang="ru")
                 if not region_resp:
                     logging.error(f"Ошибка добавления региона в Topvisor для группы '{new_group.title}'")
                     raise RuntimeError(f"Ошибка добавления региона")
@@ -157,7 +162,8 @@ async def create_new_group_for_all_projects(db: AsyncSession):
                 else:
                     import_resp = await import_keywords(session_http, new_group.topvisor_id, keywords_list)
                     if import_resp is None or import_resp.get("errors"):
-                        logging.error(f"Ошибка импорта ключей в Topvisor для группы '{new_group.title}' в проекте {domain}")
+                        logging.error(
+                            f"Ошибка импорта ключей в Topvisor для группы '{new_group.title}' в проекте {domain}")
                         raise RuntimeError("Ошибка импорта ключей")
 
                 await db.flush()

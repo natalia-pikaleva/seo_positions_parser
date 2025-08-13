@@ -9,6 +9,9 @@ from pydantic import BaseModel
 from database.models import User, UserRole
 from database.db_init import get_db
 import os
+import random
+import string
+from sqlalchemy.orm import selectinload
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -69,12 +72,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme),
     except JWTError:
         raise credentials_exception
 
-    user = await get_user_by_username(db, token_data.username)
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.projects))  # подгрузка связанных проектов
+        .where(User.username == token_data.username)
+    )
+
+    user = result.scalars().first()
     if user is None:
         raise credentials_exception
+
     return user
-
-
 
 
 # Универсальная зависимость для текущего активного пользователя (админ или менеджер)
@@ -84,14 +92,29 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme),
     # Можно добавить проверку активности, блокировки и т.п.
     return user
 
+
 # Зависимость, которая разрешает доступ только админам
 async def get_current_active_admin(current_user: User = Depends(get_current_active_user)):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return current_user
 
+
 # Зависимость для смены пароля — разрешаем и админу, и менеджеру
 async def get_current_user_for_password_change(current_user: User = Depends(get_current_active_user)):
     if current_user.role not in {UserRole.admin, UserRole.manager}:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return current_user
+
+
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+def generate_temporary_password(length: int = 6) -> str:
+    chars = string.ascii_letters + string.digits  # a-zA-Z0-9
+    return ''.join(random.choices(chars, k=length))

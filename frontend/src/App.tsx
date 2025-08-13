@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
-import { Dashboard } from './components/Dashboard';
-import { ProjectForm } from './components/ProjectForm';
-import { PositionTable } from './components/PositionTable';
-import { ProjectGroups } from './components/ProjectGroups';
-import { AuthModal } from './components/AuthModal';
-import { RegisterManagerModal } from './components/RegisterManagerModal';
-import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { Header } from './components/Header';
+import { AuthGate } from './components/AuthGate';
+import { MainContent } from './components/MainContent';
+import { ModalsManager } from './components/ModalsManager';
+import { EmployeesModal } from './components/EmployeesModal';
+import { EditUserModal } from './components/EditUserModal';
+import { CopyTextModal } from './components/CopyTextModal';
 
 import { Project, Group } from './types';
 
@@ -15,17 +15,18 @@ import {
   fetchProjects,
   createProject,
   updateProject,
+  deleteProject,
   fetchProject,
   fetchClientProjectByLink,
+  fetchUsersWithProjects,
+  deleteUser,
+  updateUser
 } from './utils/api';
-
-import logo from './assets/logo.png';
 
 interface JwtPayload {
   sub: string;
   role: string;
   exp: number;
-  // другие поля, если есть
 }
 
 type View = 'dashboard' | 'form' | 'projectGroups' | 'positionTable' | 'client';
@@ -48,8 +49,28 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => { //
-	  const init = async () => {
+  const [isClientAccess, setIsClientAccess] = useState(false);
+
+  // Модалки регистрации и смены пароля
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [registerSuccessUsername, setRegisterSuccessUsername] = useState<string | null>(null);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+
+  const [employeesModalOpen, setEmployeesModalOpen] = useState(false);
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [usersList, setUsersList] = useState<UserOut[]>([]);
+
+  const openEmployeesModal = () => setEmployeesModalOpen(true);
+  const closeEmployeesModal = () => setEmployeesModalOpen(false);
+
+  const [copyModalVisible, setCopyModalVisible] = useState(false);
+  const [registerPassword, setRegisterPassword] = useState<string | null>(null);
+  const [registerUsername, setRegisterUsername] = useState<string | null>(null);
+
+
+  // Инициализация данных и авторизации
+  useEffect(() => {
+	const init = async () => {
 	    setLoading(true);
 	    setError(null);
 	    try {
@@ -75,11 +96,16 @@ function App() {
 	        const project = await fetchClientProjectByLink(clientLink);
 	        setSelectedProject(project);
 	        setIsClientAccess(true);
-	        setCurrentView('positionTable'); // <== здесь важное изменение
+	        setCurrentView('positionTable');
 	      } else {
 	        setIsClientAccess(false);
-	        const list = await fetchProjects();
-	        setProjects(list);
+	        if (savedToken) {
+	          // Передаем token из savedToken, а не из виртуальной переменной token
+	          const list = await fetchProjects(savedToken);
+	          setProjects(list);
+	        } else {
+	          setProjects([]);
+	        }
 	        setCurrentView('dashboard');
 	      }
 	    } catch (e) {
@@ -96,15 +122,8 @@ function App() {
 	}, []);
 
 
+  // Обработчики выбора, обновления и возврата
 
-  // Модалки регистрации и смены пароля
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-  const [registerSuccessUsername, setRegisterSuccessUsername] = useState<string | null>(null);
-  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-
-  const [isClientAccess, setIsClientAccess] = useState(false);
-
-  // Обработчик выбора проекта
   const handleSelectProject = useCallback(async (project: Project) => {
     setLoading(true);
     try {
@@ -120,49 +139,51 @@ function App() {
     }
   }, []);
 
-  // Обработчик выбора группы
-  const handleSelectGroup = useCallback(async (group: Group) => {
-	  if (!selectedProject) return;
-	  setLoading(true);
-	  try {
-	    const updatedProject = await fetchProject(selectedProject.id);
-	    setSelectedProject(updatedProject);
-	    const foundGroup = updatedProject.groups.find(g => g.id === group.id) || null;
-	    setSelectedGroup(foundGroup);
-	    setCurrentView('positionTable');
-	  } catch (e) {
-	    alert('Не удалось загрузить проект');
-	  } finally {
-	    setLoading(false);
-	  }
-	}, [selectedProject]);
+  const handleSelectGroup = useCallback(
+    async (group: Group) => {
+      if (!selectedProject) return;
+      setLoading(true);
+      try {
+        const updatedProject = await fetchProject(selectedProject.id);
+        setSelectedProject(updatedProject);
+        const foundGroup = updatedProject.groups.find((g) => g.id === group.id) || null;
+        setSelectedGroup(foundGroup);
+        setCurrentView('positionTable');
+      } catch (e) {
+        alert('Не удалось загрузить проект');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [selectedProject],
+  );
 
-
-  // Возврат из ProjectGroups к Dashboard
   const handleBackToDashboard = useCallback(() => {
     setSelectedProject(null);
     setSelectedGroup(null);
     setCurrentView('dashboard');
   }, []);
 
-  // Возврат из PositionTable к проекту (список групп)
   const handleBackToProjectGroups = useCallback(() => {
     setSelectedGroup(null);
     setCurrentView('projectGroups');
   }, []);
 
-  // Обновление проектов
-  const refreshProjects = useCallback(async () => {
+  const refreshProjects = useCallback(async (token: string) => {
     try {
-      const list = await fetchProjects();
-      setProjects(list);
-      return list;
-    } catch {
-      return [];
-    }
-  }, []);
+	    if (!token) {
+	      setProjects([]);
+	      return [];
+	    }
+	    const list = await fetchProjects(token);
+	    setProjects(list);
+	    return list;
+	  } catch {
+	    return [];
+	  }
+	}, []);
 
-  // Обновление выбранного проекта
+
   const refreshProject = useCallback(async () => {
     if (!selectedProject) return null;
     try {
@@ -174,22 +195,28 @@ function App() {
     }
   }, [selectedProject]);
 
-  // Обработки создания и обновления проектов
-  const handleCreateProject = async (projectData: Omit<Project, 'id' | 'createdAt' | 'clientLink'>) => {
-    try {
-      const newProject = await createProject(projectData);
-      setProjects(prev => [...prev, newProject]);
-      setCurrentView('dashboard');
-    } catch (e) {
-      console.error(e);
-      alert('Не удалось создать проект');
-    }
-  };
+  const handleCreateProject = async (
+	projectData: Omit<Project, 'id' | 'createdAt' | 'clientLink'>,
+	) => {
+	  try {
+	    if (!authToken) {
+	      alert('Пожалуйста, авторизуйтесь');
+	      return;
+	    }
+	    const newProject = await createProject(projectData, authToken);
+	    setProjects((prev) => [...prev, newProject]);
+	    setCurrentView('dashboard');
+	  } catch (e) {
+	    console.error(e);
+	    alert('Не удалось создать проект');
+	  }
+	};
+
 
   const handleUpdateProject = async (updatedProject: Project) => {
     try {
       const project = await updateProject(updatedProject.id, updatedProject);
-      setProjects(prev => prev.map(p => (p.id === project.id ? project : p)));
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? project : p)));
       setSelectedProject(project);
     } catch (e) {
       console.error(e);
@@ -197,266 +224,226 @@ function App() {
     }
   };
 
+  const handleDeleteProject = useCallback(async (projectId: string) => {
+    if (!authToken) {
+	    alert('Пожалуйста, авторизуйтесь');
+	    return;
+	  }
+
+    setLoading(true);
+	  try {
+	    await deleteProject(projectId, authToken);
+	    setProjects(prev => prev.filter(p => p.id !== projectId));
+	    // Если сейчас выбран удаляемый проект — сбросить selection
+	    if (selectedProject?.id === projectId) {
+	      setSelectedProject(null);
+	      setSelectedGroup(null);
+	      setCurrentView('dashboard');
+	    }
+	  } catch (error: any) {
+	    console.error('Ошибка при удалении проекта:', error);
+	    alert(error.message || 'Не удалось удалить проект');
+	  } finally {
+	    setLoading(false);
+	  }
+	}, [authToken, selectedProject]);
+
+
   const handleProjectGroupLoaded = (updatedProject: Project) => {
     setSelectedProject(updatedProject);
-    setProjects(prev => prev.map(p => (p.id === updatedProject.id ? updatedProject : p)));
+    setProjects((prev) => prev.map((p) => (p.id === updatedProject.id ? updatedProject : p)));
   };
 
-  // Обработка логина
-  const handleLoginSuccess = (token: string, isTemp: boolean) => {
-    setAuthToken(token);
-    setIsTemporaryPassword(isTemp);
-    localStorage.setItem('token', token);
+  // Логин, логаут, управление состоянием модалок
 
-    try {
-      const decoded = jwtDecode<JwtPayload>(token);
-      setUserRole(decoded.role);
-    } catch {
-      setUserRole(null);
-    }
+  const handleLoginSuccess = async (token: string, isTemp: boolean) => {
+	  setAuthToken(token);
+	  setIsTemporaryPassword(isTemp);
+	  localStorage.setItem('token', token);
 
-    if (isTemp) {
-      setShowChangePasswordModal(true);
-    }
-  };
+	  try {
+	    const decoded = jwtDecode<JwtPayload>(token);
+	    setUserRole(decoded.role);
+	  } catch {
+	    setUserRole(null);
+	  }
 
-//   useEffect(() => {
-// 	  async function init() {
-// 	    setLoading(true);
-// 	    setError(null);
-//
-// 	    try {
-// 	      const savedToken = localStorage.getItem('token');
-// 	      if (savedToken) {
-// 	        const decoded = jwtDecode<JwtPayload>(savedToken);
-// 	        const now = Date.now() / 1000;
-// 	        if (decoded.exp && decoded.exp > now) {
-// 	          setAuthToken(savedToken);
-// 	          setUserRole(decoded.role);
-// 	        } else {
-// 	          localStorage.removeItem('token');
-// 	          setAuthToken(null);
-// 	          setUserRole(null);
-// 	        }
-// 	      }
-//
-// 	      const pathSegments = window.location.pathname.split('/');
-// 	      const clientIndex = pathSegments.indexOf('client');
-//
-// 	      if (clientIndex !== -1 && pathSegments.length > clientIndex + 1) {
-// 	        const clientLink = pathSegments[clientIndex + 1];
-// 	        const project = await fetchClientProjectByLink(clientLink);
-// 	        setSelectedProject(project);
-// 	        setIsClientAccess(true);
-// 	        setCurrentView('projectGroups');
-// 	      } else {
-// 	        setIsClientAccess(false);
-// 	        const list = await fetchProjects();
-// 	        setProjects(list);
-// 	        setCurrentView('dashboard');
-// 	      }
-// 	    } catch (e) {
-// 	      console.error(e);
-// 	      setError('Ошибка загрузки данных');
-// 	      setCurrentView('dashboard');
-// 	    } finally {
-// 	      setLoading(false);
-// 	    }
-// 	  }
-//
-// 	  init();
-// 	}, []);
+	  if (isTemp) {
+	    setShowChangePasswordModal(true);
+	  }
 
-  // Выход из системы
+	  // Загрузить проекты сразу после установки токена
+	  await refreshProjects(token);
+};
+
   const handleLogout = () => {
     setAuthToken(null);
     setUserRole(null);
     setIsTemporaryPassword(false);
-    localStorage.removeItem('token');
+    localStorage.clear();
     setCurrentView('dashboard');
     setSelectedProject(null);
     setSelectedGroup(null);
   };
 
-  // Модалки управления
   const openAuth = () => setIsAuthOpen(true);
   const closeAuth = () => setIsAuthOpen(false);
 
   const openRegisterModal = () => {
     setRegisterSuccessUsername(null);
     setIsRegisterModalOpen(true);
+    setEmployeesModalOpen(false);
   };
-  const closeRegisterModal = () => setIsRegisterModalOpen(false);
+  const closeRegisterModal = () => {
+  setIsRegisterModalOpen(false);
+  setEmployeesModalOpen(true);
+};
 
-  const handleRegisterSuccess = (username: string) => {
-    setRegisterSuccessUsername(username);
+  const handleRegisterSuccess = (username: string, temporaryPassword: string) => {
+    setRegisterUsername(username);
+    setRegisterPassword(temporaryPassword);
+    setIsRegisterModalOpen(false);
+    setEmployeesModalOpen(true);
+    setCopyModalVisible(true);
   };
 
-  if (loading || authLoading) {
-	  return <div className="text-center py-8">Загрузка...</div>;
-	}
+
+  // Обработка редактирования пользователя через модалку
+  const handleEditUser = (user: UserOut) => {
+    setUserToEdit(user);
+    setEditUserModalOpen(true);
+  };
+
+  const [editUserModalOpen, setEditUserModalOpen] = useState(false);
+  const closeEditUserModal = () => {
+    setEditUserModalOpen(false);
+    setUserToEdit(null);
+  };
+
+  // Здесь вызываем функцию updateUser из api при сохранении изменений пользователя
+  const handleUserSave = async (updatedUser: UserOut | User) => {
+    if (!authToken || !updatedUser.id) return;
+
+    // Формируем объект для updateUser (UserUpdateRequest)
+    const updateData: UserUpdateRequest = {
+      fullname: (updatedUser as UserOut).fullname || null,
+      role: (updatedUser as UserOut).role,
+      project_ids: (updatedUser as UserOut).projects
+        ? (updatedUser.projects as { id: string }[]).map(p => p.id)
+        : undefined,
+    };
+
+    try {
+      const updated = await updateUser(updatedUser.id, updateData, authToken);
+      // Обновляем список сотрудников локально, подменяя отредактированного пользователя
+      setUsersList(prevList =>
+        prevList.map(u => (u.id === updated.id ? updated : u))
+      );
+
+      alert('Пользователь успешно обновлён');
+    } catch (err: any) {
+      console.error('Ошибка обновления пользователя:', err);
+      alert(err.message || 'Ошибка обновления пользователя');
+    }
+  };
 
 
-  if (error) {
-    return <div className="text-center py-8 text-red-600">{error}</div>;
-  }
+  // Рендер
 
-  // Проверка: если нет токена И это не клиент — просим залогиниться
-  if (!authToken && !isClientAccess) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-700">
-        <div className="flex items-center space-x-3 justify-center sm:justify-start w-full sm:w-auto">
-          <img src={logo} alt="Логотип" className="h-12 w-auto" />
-          <h1 className="text-xl font-bold">SEO Position Parser</h1>
-        </div>
-        <p>Пожалуйста, войдите в систему для доступа к приложению.</p>
-        <button
-          onClick={openAuth}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Войти
-        </button>
-        {isAuthOpen && <AuthModal onClose={closeAuth} onLoginSuccess={handleLoginSuccess} />}
-      </div>
-    );
-  }
-
-  // Основной рендер — хедер всегда + условно содержимое
   return (
+    <>
+      <AuthGate
+        loading={loading || authLoading}
+        error={error}
+        authToken={authToken}
+        isClientAccess={isClientAccess}
+        isAuthOpen={isAuthOpen}
+        onOpenAuth={openAuth}
+        onCloseAuth={closeAuth}
+        onLoginSuccess={handleLoginSuccess}
+      />
 
+      {(authToken || isClientAccess) && (
+        <div className="min-h-screen bg-gray-50">
+          <Header
+	        userRole={userRole}
+	        authToken={authToken}
+	        isClientAccess={isClientAccess}
+	        onLogout={handleLogout}
+	        onOpenRegisterModal={openRegisterModal}
+	        onOpenAuth={openAuth}
+	        onOpenEmployeesModal={openEmployeesModal}
+	      />
 
-    <div className="min-h-screen bg-gray-50">
-      {/* Хедер */}
-      <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 p-4 max-w-7xl mx-auto">
-        <div className="flex items-center space-x-3 justify-center sm:justify-start w-full sm:w-auto">
-          <img src={logo} alt="Логотип" className="h-12 w-auto" />
-          <h1 className="text-xl font-bold">SEO Position Parser</h1>
+          <MainContent
+            currentView={currentView}
+            isClientAccess={isClientAccess}
+            projects={projects}
+            selectedProject={selectedProject}
+            selectedGroup={selectedGroup}
+            setCurrentView={setCurrentView}
+            onSelectProject={handleSelectProject}
+            onSelectGroup={handleSelectGroup}
+            onBackToDashboard={handleBackToDashboard}
+            onBackToProjectGroups={handleBackToProjectGroups}
+            refreshProjects={refreshProjects}
+            refreshProject={refreshProject}
+            onCreateProject={handleCreateProject}
+            onUpdateProject={handleUpdateProject}
+            onProjectGroupLoaded={handleProjectGroupLoaded}
+            onDeleteProject={handleDeleteProject}
+          />
+
+          <ModalsManager
+            isRegisterOpen={isRegisterModalOpen}
+            onCloseRegister={closeRegisterModal}
+            onRegisterSuccess={handleRegisterSuccess}
+            registerToken={authToken}
+            showChangePasswordModal={showChangePasswordModal}
+            onCloseChangePassword={() => setShowChangePasswordModal(false)}
+            changePasswordToken={authToken}
+            onPasswordChanged={() => {
+              setIsTemporaryPassword(false);
+              alert('Пароль успешно изменён. Пожалуйста, войдите снова.');
+              handleLogout();
+            }}
+          />
         </div>
+      )}
 
-        <div className="flex flex-col sm:flex-row items-center w-full sm:w-auto gap-2 sm:gap-4">
-          {authToken || isClientAccess ? (
-		  <>
-		    {userRole === 'admin' && (
-		      <button
-		        onClick={openRegisterModal}
-		        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-		      >
-		        Регистрация менеджера
-		      </button>
-		    )}
-		    {authToken && (
-		      <button
-		        onClick={handleLogout}
-		        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-		      >
-		        Выйти
-		      </button>
-		    )}
-		  </>
-		) : (
-		  <button
-		    onClick={openAuth}
-		    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-		  >
-		    Войти
-		  </button>
+      {employeesModalOpen && authToken && (
+	    <EmployeesModal
+		    token={authToken}
+		    onClose={closeEmployeesModal}
+		    onOpenRegisterModal={openRegisterModal}
+		    fetchUsers={fetchUsersWithProjects}
+		    deleteUser={deleteUser}
+		    onEditUser={handleEditUser}
+		    users={usersList}
+		    setUsers={setUsersList}
+		  />
 		)}
 
-        </div>
-      </header>
-
-      {/* Основной контент */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {currentView === 'dashboard' && !isClientAccess && (
-          <Dashboard
-            projects={projects}
-            onCreateProject={() => setCurrentView('form')}
-            onSelectProject={handleSelectProject}
-            refreshProjects={refreshProjects}
-            isClientView={false}
-          />
-        )}
-
-        {currentView === 'form' && !isClientAccess && (
-          <ProjectForm
-            onSubmit={handleCreateProject}
-            onCancel={() => setCurrentView('dashboard')}
-          />
-        )}
-
-        {currentView === 'projectGroups' && selectedProject && (
-          <ProjectGroups
-			  project={selectedProject}
-			  onBack={handleBackToDashboard}
-			  onSelectGroup={handleSelectGroup}
-			  refreshProject={refreshProject}
-			  onProjectGroupLoaded={(updatedProject) => {
-			    setSelectedProject(updatedProject);
-			    setProjects(prev => prev.map(p => (p.id === updatedProject.id ? updatedProject : p)));
-			  }}
-			  isClientView={isClientAccess}
-			/>
-        )}
-
-        {currentView === 'positionTable' && selectedProject && (
-			  <div className="space-y-6 max-w-7xl mx-auto">
-			    {!isClientAccess && selectedGroup && (
-			      <button
-			        onClick={handleBackToProjectGroups}
-			        className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
-			      >
-			        ← Назад к группам
-			      </button>
-			    )}
-			    <PositionTable
-			      group={isClientAccess ? selectedProject.groups[0] || null : selectedGroup}
-			    onGroupLoaded={(updatedGroup) => {
-			      // Формируем обновлённый проект с новой группой
-			      handleProjectGroupLoaded({
-			        ...selectedProject,
-			        groups: selectedProject.groups.map(g =>
-			          g.id === updatedGroup.id ? updatedGroup : g
-			        ),
-			      });
-			    }}
-			    onUpdateGroup={(updatedGroup) => {
-			      handleProjectGroupLoaded({
-			        ...selectedProject,
-			        groups: selectedProject.groups.map(g =>
-			          g.id === updatedGroup.id ? updatedGroup : g
-			        ),
-			      });
-			    }}
-			    isClientView={isClientAccess}
-		        domain={selectedProject.domain}
-		        groups={selectedProject.groups}
-			  />
-          </div>
-        )}
-      </main>
-
-      {/* Модалки */}
-      {isRegisterModalOpen && (
-        <RegisterManagerModal
-          onClose={closeRegisterModal}
-          onRegisterSuccess={handleRegisterSuccess}
-          token={authToken!}
-        />
+      {editUserModalOpen && userToEdit && authToken && (
+        <EditUserModal
+		  token={authToken}
+		  user={userToEdit}
+		  onClose={closeEditUserModal}
+		  onSave={handleUserSave}
+		  updateUser={updateUser}
+		  fetchProjects={fetchProjects}
+		/>
       )}
-      {showChangePasswordModal && authToken && (
-        <ChangePasswordModal
-          token={authToken}
-          onClose={() => setShowChangePasswordModal(false)}
-          onPasswordChanged={() => {
-            setIsTemporaryPassword(false);
-            alert('Пароль успешно изменён. Пожалуйста, войдите снова.');
-            handleLogout();
-          }}
-        />
-      )}
-    </div>
+
+      <CopyTextModal
+		  visible={copyModalVisible}
+		  onClose={() => setCopyModalVisible(false)}
+		  username={registerUsername || ''}
+		  temporaryPassword={registerPassword || ''}
+		/>
+
+    </>
   );
 }
 
 export default App;
-

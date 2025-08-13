@@ -1,7 +1,7 @@
 import enum
 import uuid
 from sqlalchemy import (Column, String, Integer, DateTime, ForeignKey, Enum,
-                        UniqueConstraint, Boolean, BigInteger, Text, JSON)
+                        UniqueConstraint, Boolean, BigInteger, Text, JSON, Table)
 from sqlalchemy.sql import desc
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -26,6 +26,14 @@ class TrendEnum(str, enum.Enum):
     stable = "stable"
 
 
+user_project_link = Table(
+    'user_project_link',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('project_id', UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), primary_key=True)
+)
+
+
 class Keyword(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     group_id = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
@@ -44,6 +52,7 @@ class Keyword(Base):
     __table_args__ = (
         UniqueConstraint('group_id', 'keyword', name='uq_group_keyword'),
     )
+
 
 class Group(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -65,6 +74,8 @@ class Group(Base):
 
 
 class Project(Base):
+    __tablename__ = "projects"
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     domain = Column(String, nullable=False)
     schedule = Column(Enum(ScheduleEnum), default=ScheduleEnum.daily, nullable=False)
@@ -73,7 +84,11 @@ class Project(Base):
     topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
 
     groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
-
+    users = relationship(
+        "User",
+        secondary=user_project_link,
+        back_populates="projects"
+    )
 
 
 class Position(Base):
@@ -99,11 +114,18 @@ class UserRole(str, enum.Enum):
 
 
 class User(Base):
+    __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
+    fullname = Column(String, unique=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
-    is_temporary_password = Column(Boolean, default=True)  # True, если пароль временный
+    is_temporary_password = Column(Boolean, default=True)
+    projects = relationship(
+        "Project",
+        secondary=user_project_link,
+        back_populates="users"
+    )
 
 
 class TaskStatusEnum(str, enum.Enum):
