@@ -145,7 +145,6 @@ const dataGridHeaderSx = {
 
 
 
-
 export function ExcelLikeTableView({
   domain,
   positions,
