@@ -48,7 +48,7 @@ class Keyword(Base):
 
     positions = relationship("Position", back_populates="keyword")
     group = relationship("Group", back_populates="keywords")
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+
 
     __table_args__ = (
         UniqueConstraint('group_id', 'keyword', name='uq_group_keyword'),
