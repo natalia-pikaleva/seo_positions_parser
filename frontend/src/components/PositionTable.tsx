@@ -532,10 +532,11 @@ console.log('dateGroups:', extendedDateGroups);
 		      keywords={displayGroup.keywords}
 		      intervalSums={intervalSums}
 		      dateGroups={extendedDateGroups}
+		      isClientView={isClientView}
 			/>
 		</div>
 
-        {/* Остальные компоненты */}
+        {/* Работа с ключевыми запросами */}
         <div className="mb-6 flex flex-col h-full min-h-0">
 		  {!isClientView && (
 			  <KeywordManager
@@ -543,8 +544,9 @@ console.log('dateGroups:', extendedDateGroups);
 			  groups={groups || []}
 			  onAddKeyword={async (keywordData) => {
 			    const newKeyword = await createKeyword(editableGroup.id, keywordData);
-			    onGroupLoaded({ ...editableGroup, keywords: [...editableGroup.keywords, newKeyword] });
-			    setEditableGroup(prev => prev ? {...prev, keywords: [...prev.keywords, newKeyword]} : prev);
+			    const refreshedGroup = await fetchGroup(editableGroup.id);
+			    setEditableGroup(refreshedGroup);
+                onGroupLoaded(refreshedGroup);
 			  }}
 			  onUpdateKeyword={async (id, keywordData) => {
 				  const updatedKeyword = await updateKeyword(editableGroup.id, id, keywordData);
