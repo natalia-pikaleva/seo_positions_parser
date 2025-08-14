@@ -314,6 +314,7 @@ async def create_keyword(group_id: UUID, keyword_in: KeywordCreate, db: AsyncSes
         new_keyword = Keyword(
             group_id=group_id,
             keyword=keyword_in.keyword,
+            priority=keyword_in.priority if keyword_in.priority is not None else False,
             price_top_1_3=keyword_in.price_top_1_3,
             price_top_4_5=keyword_in.price_top_4_5,
             price_top_6_10=keyword_in.price_top_6_10,

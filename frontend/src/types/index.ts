@@ -2,7 +2,7 @@ export interface KeywordData {
   id: string;
   keyword: string;
   is_check: boolean;
-  is_check: boolean;
+  priority?: boolean;
   pricing: {
     top1to3: number;
     top4to5: number;
@@ -30,6 +30,7 @@ export interface KeywordUpdate {
   price_top_4_5?: number;
   price_top_6_10?: number;
   is_check?: boolean;
+  priority?: boolean;
 }
 
 export interface PositionHistory {

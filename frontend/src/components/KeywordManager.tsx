@@ -60,6 +60,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
     price_top_1_3: 0,
     price_top_4_5: 0,
     price_top_6_10: 0,
+    priority: false,
   });
   const [isAdding, setIsAdding] = useState(false);
 
@@ -74,6 +75,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
         price_top_1_3: editingKeyword.price_top_1_3 || 0,
         price_top_4_5: editingKeyword.price_top_4_5 || 0,
         price_top_6_10: editingKeyword.price_top_6_10 || 0,
+        priority: editingKeyword.priority || false,
       });
     }
   }, [editingKeyword]);
@@ -151,19 +153,21 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 
     try {
       if (isAdding) {
-        await onAddKeyword({
-          keyword: trimmed,
-          price_top_1_3: formState.price_top_1_3,
-          price_top_4_5: formState.price_top_4_5,
-          price_top_6_10: formState.price_top_6_10,
-        });
-      } else if (editingKeyword) {
-        await onUpdateKeyword(editingKeyword.id, {
-          keyword: trimmed,
-          price_top_1_3: formState.price_top_1_3,
-          price_top_4_5: formState.price_top_4_5,
-          price_top_6_10: formState.price_top_6_10,
-        });
+	    await onAddKeyword({
+	      keyword: trimmed,
+	      price_top_1_3: formState.price_top_1_3,
+	      price_top_4_5: formState.price_top_4_5,
+	      price_top_6_10: formState.price_top_6_10,
+	      priority: formState.priority,
+	    });
+	  } else if (editingKeyword) {
+	    await onUpdateKeyword(editingKeyword.id, {
+	      keyword: trimmed,
+	      price_top_1_3: formState.price_top_1_3,
+	      price_top_4_5: formState.price_top_4_5,
+	      price_top_6_10: formState.price_top_6_10,
+	      priority: formState.priority,
+	    });
       }
       cancel();
     } catch (error: any) {
@@ -228,6 +232,19 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
             </div>
           </div>
 
+          <div className="mt-4">
+			  <label className="inline-flex items-center">
+			    <input
+			      type="checkbox"
+			      checked={formState.priority}
+			      onChange={e => setFormState({ ...formState, priority: e.target.checked })}
+			      className="form-checkbox h-5 w-5 text-blue-600"
+			    />
+			    <span className="ml-2">Приоритет</span>
+			  </label>
+		  </div>
+
+
           <div className="flex flex-col sm:flex-row gap-2 mt-4">
 			  <button
 			    onClick={save}
@@ -261,8 +278,9 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
 				  <div>
 				    <div className="font-medium">{keyword.keyword}</div>
 				    <div className="text-sm text-gray-600">
-				      Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽
-				    </div>
+					  Цены: {keyword.price_top_1_3} ₽, {keyword.price_top_4_5} ₽, {keyword.price_top_6_10} ₽, приоритет: {keyword.priority ? 'да' : 'нет'}
+					</div>
+
 				  </div>
 				  <div className="flex flex-row flex-wrap gap-2 items-center mt-2 sm:mt-0">
 		        <button

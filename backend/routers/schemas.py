@@ -30,6 +30,7 @@ class KeywordBase(BaseModel):
     price_top_4_5: int = Field(0, ge=0)
     price_top_6_10: int = Field(0, ge=0)
     is_check: Optional[bool] = True
+    priority: Optional[bool] = False
 
 
 class KeywordCreate(KeywordBase):
@@ -39,6 +40,7 @@ class KeywordCreate(KeywordBase):
 class KeywordUpdate(BaseModel):
     keyword: Optional[constr(min_length=1)] = None
     is_check: Optional[bool] = None
+    priority: Optional[bool] = False
     price_top_1_3: Optional[int] = Field(None, ge=0)
     price_top_4_5: Optional[int] = Field(None, ge=0)
     price_top_6_10: Optional[int] = Field(None, ge=0)

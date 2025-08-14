@@ -23,6 +23,7 @@ interface Keyword {
   id: string;
   keyword: string;
   region?: string;
+  priority?: boolean,
   price_top_1_3?: number;
   price_top_4_5?: number;
   price_top_6_10?: number;
@@ -55,6 +56,7 @@ interface ExcelLikeTableViewProps {
   keywords: Keyword[];
   intervalSums: IntervalSums;
   dateGroups: IntervalGroup[];
+  isClientView?: boolean
 }
 
 function mergeDatesWithIntervals(
@@ -151,6 +153,7 @@ export function ExcelLikeTableView({
   keywords,
   intervalSums,
   dateGroups,
+  isClientView
 }: ExcelLikeTableViewProps): JSX.Element {
   const isMobile = useMediaQuery('(max-width:600px)');
 
@@ -192,15 +195,17 @@ export function ExcelLikeTableView({
 
   // Формируем строки для вкладки "Инфо"
   const infoRows = useMemo(() => {
-    return keywords.map((k, index) => ({
-      id: k.id,
-      serial: index + 1,
-      keyword: k.keyword,
-      cost_top3: k.price_top_1_3 ?? '-',
-      cost_top5: k.price_top_4_5 ?? '-',
-      cost_top10: k.price_top_6_10 ?? '-',
-    }));
-  }, [keywords]);
+  return keywords.map((k, index) => ({
+    id: k.id,
+    serial: index + 1,
+    keyword: k.keyword,
+    cost_top3: k.price_top_1_3 ?? '-',
+    cost_top5: k.price_top_4_5 ?? '-',
+    cost_top10: k.price_top_6_10 ?? '-',
+    priority: (k as any).priority || false,
+  }));
+}, [keywords]);
+
 
   const commonColumnHeaderStyle = {
 	  fontSize: '0.75rem',       // уменьшенный размер шрифта (пример: 12px)
@@ -226,6 +231,7 @@ export function ExcelLikeTableView({
           key={row.id}
           style={{
             border: '1px solid #ccc',
+            border: (row.priority && !isClientView) ? '2px solid #ea580c' : '1px solid #ccc',
             borderRadius: 8,
             padding: 12,
             marginBottom: 12,
@@ -391,6 +397,7 @@ export function ExcelLikeTableView({
 	      position: pos?.position ?? '-',
 	      frequency: pos?.frequency ?? '-',  // Добавляем частотность
 	      cost: pos?.cost ?? '-',
+	      priority: (k as any).priority || false,
 	    };
 	  });
 	};
@@ -476,12 +483,13 @@ export function ExcelLikeTableView({
 		      <div
 		        key={k.id}
 		        style={{
-		          border: '1px solid #ccc',
+		          border: (k.priority && !isClientView) ? '2px solid #ea580c' : '1px solid #ccc',
 		          borderRadius: 8,
 		          padding: 12,
 		          marginBottom: 12,
 		          background: '#fff',
-		          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+		          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+		          fontWeight: 'normal',
 		        }}
 		      >
 		        <div><strong>Ключевой запрос: {k.keyword} </strong></div>
@@ -554,6 +562,7 @@ export function ExcelLikeTableView({
         daysTop10,
         costTop10,
         totalCost,
+        priority: (kw as any).priority || false,
       };
     });
   };
@@ -581,7 +590,7 @@ export function ExcelLikeTableView({
 	}
 
   // Вариант карточек с итогами за период в формате аккордеона
-  function IntervalAccordion({ row }) {
+  function IntervalAccordion({ row, isClientView }: { row: any; isClientView?: boolean }) {
 	  const [open, setOpen] = useState(false);
 
 	  const colorTop3 = '#16a34a'; // зеленый
@@ -591,12 +600,13 @@ export function ExcelLikeTableView({
 	  return (
 	    <div
 	      style={{
-	        border: '1px solid #ccc',
+	        border: (row.priority && !isClientView) ? '2px solid #ea580c' : '1px solid #ccc',
 	        borderRadius: 8,
 	        marginBottom: 10,
 	        background: '#fff',
 	        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
 	        overflow: 'hidden',
+	        fontWeight: 'normal',
 	      }}
 	    >
 	      <div
@@ -675,7 +685,7 @@ export function ExcelLikeTableView({
 	        Итого за 2 недели: {totalSumForInterval.toLocaleString('ru-RU')} руб.
 	      </div>
 	      {rows.map(row => (
-	        <IntervalAccordion key={row.id} row={row} />
+	        <IntervalAccordion key={row.id} row={row} isClientView={isClientView} />
 	      ))}
 	    </div>
 	  );
@@ -758,14 +768,23 @@ export function ExcelLikeTableView({
 	        ) : (
 	          <div style={{ marginTop: 0, height: 420, width: '100%' }}>
 	            <DataGrid
-	              rows={infoRows}
-	              columns={infoColumns}
-	              pageSize={10}
-	              rowsPerPageOptions={[10]}
-	              disableSelectionOnClick
-	              autoHeight
-	              sx={dataGridHeaderSx}
-	            />
+					  rows={infoRows}
+					  columns={infoColumns}
+					  pageSize={10}
+					  rowsPerPageOptions={[10]}
+					  disableSelectionOnClick
+					  autoHeight
+					  sx={{
+					    ...dataGridHeaderSx,
+					    '& .priority-row': {
+					      fontWeight: 'bold',
+					    },
+					  }}
+					  getRowClassName={(params) =>
+					    (params.row.priority && !isClientView) ? 'priority-row' : ''
+					  }
+					/>
+
 	          </div>
 	        )}
 		</TabPanel>
@@ -781,14 +800,23 @@ export function ExcelLikeTableView({
 	                renderDateCards(tab.value)
 	              ) : (
 	                <DataGrid
-	                  rows={getRowsForDate(tab.value)}
-	                  columns={getColumnsForDateWithTotal(tab.value, totalCost)}
-	                  pageSize={20}
-	                  rowsPerPageOptions={[10, 20, 50]}
-	                  disableSelectionOnClick
-	                  autoHeight
-	                  sx={dataGridHeaderSx}
-	                />
+					  rows={getRowsForDate(tab.value)}
+					  columns={getColumnsForDateWithTotal(tab.value, totalCost)}
+					  pageSize={20}
+					  rowsPerPageOptions={[10, 20, 50]}
+					  disableSelectionOnClick
+					  autoHeight
+					  sx={{
+					    ...dataGridHeaderSx,
+					    '& .priority-row': {
+					      fontWeight: 'bold',
+					    },
+					  }}
+					  getRowClassName={(params) =>
+					    (params.row.priority && !isClientView) ? 'priority-row' : ''
+					  }
+					/>
+
 	              )}
 	            </TabPanel>
 	          );
@@ -805,14 +833,23 @@ export function ExcelLikeTableView({
 	                renderIntervalCards(intervalKey)
 	              ) : (
 	                <DataGrid
-	                  rows={rows}
-	                  columns={getColumnsForIntervalWithSummary(totalSumForInterval)}
-	                  pageSize={10}
-	                  rowsPerPageOptions={[10, 20, 50]}
-	                  disableSelectionOnClick
-	                  autoHeight
-	                  sx={dataGridHeaderSx}
-	                />
+					  rows={rows}
+					  columns={getColumnsForIntervalWithSummary(totalSumForInterval)}
+					  pageSize={10}
+					  rowsPerPageOptions={[10, 20, 50]}
+					  disableSelectionOnClick
+					  autoHeight
+					  sx={{
+					    ...dataGridHeaderSx,
+					    '& .priority-row': {
+					      fontWeight: 'bold',
+					    },
+					  }}
+					  getRowClassName={(params) =>
+					    (params.row.priority && !isClientView) ? 'priority-row' : ''
+					  }
+					/>
+
 	              )}
 	            </TabPanel>
 	          );

@@ -255,7 +255,9 @@ export async function fetchPositionsIntervals(
   if (!response.ok) {
     throw new Error('Ошибка загрузки агрегированных сумм позиций');
   }
-  return response.json();
+  const data = await response.json();
+  console.log('fetchPositionsIntervals response data:', data); // <-- лог здесь
+  return data;
 }
 
 // --- ссылка клиента

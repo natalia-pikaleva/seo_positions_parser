@@ -38,6 +38,7 @@ class Keyword(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     group_id = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
     keyword = Column(String, nullable=False)
+    priority = Column(Boolean, default=False)
 
     price_top_1_3 = Column(Integer, default=0, nullable=False)
     price_top_4_5 = Column(Integer, default=0, nullable=False)
@@ -64,7 +65,7 @@ class Group(Base):
 
     project = relationship("Project", back_populates="groups")
     keywords = relationship("Keyword",
-                            order_by=[desc(Keyword.is_check), Keyword.keyword],
+                            order_by=[desc(Keyword.priority), Keyword.keyword],
                             lazy="selectin",
                             back_populates="group", cascade="all, delete-orphan")
 
