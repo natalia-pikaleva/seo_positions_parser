@@ -497,7 +497,14 @@ async def main_task(project_id: UUID):
 
 @celery_app.task(bind=True)
 def run_main_task(self):
-    return asyncio.run(run_main_task_async(self))
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # В случае отсутствия event loop, создаём новый
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(run_main_task_async(self))
 
 
 async def run_main_task_async(self):
