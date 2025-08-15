@@ -525,7 +525,9 @@ async def run_main_task_async(self):
         try:
             result = await session_db.execute(
                 select(Project)
-                .options(selectinload(Project.keywords))
+                .options(
+                    selectinload(Project.groups).selectinload(Group.keywords),
+                )
                 .where(Project.topvisor_id.isnot(None))
             )
             projects = result.scalars().all()
