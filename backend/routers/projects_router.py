@@ -303,7 +303,7 @@ async def delete_project(
 @router.post("/{project_id}/check")
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
-        await main_task(project_id)
+        await main_task([project_id])
         project = await db.get(Project, project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")

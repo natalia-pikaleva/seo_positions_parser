@@ -56,7 +56,9 @@ interface ExcelLikeTableViewProps {
   keywords: Keyword[];
   intervalSums: IntervalSums;
   dateGroups: IntervalGroup[];
-  isClientView?: boolean
+  isClientView?: boolean;
+  filterPeriod: 'week' | 'month';
+  periodOffset: number;
 }
 
 function mergeDatesWithIntervals(
@@ -153,12 +155,89 @@ export function ExcelLikeTableView({
   keywords,
   intervalSums,
   dateGroups,
-  isClientView
+  isClientView,
+  filterPeriod,
+  periodOffset
 }: ExcelLikeTableViewProps): JSX.Element {
   const isMobile = useMediaQuery('(max-width:600px)');
 
   type SortMode = 'none' | 'asc' | 'desc';
   const [sortMode, setSortMode] = useState<SortMode>('none');
+
+  function filterDatesByPeriod(dates: string[], period: 'week' | 'month', offset: number): string[] {
+	  const now = new Date();
+
+	  if (period === 'month') {
+	    const year = now.getFullYear();
+	    const month = now.getMonth() + offset;
+	    return dates.filter(dateStr => {
+	      const d = new Date(dateStr);
+	      return d.getFullYear() === year && d.getMonth() === month;
+	    });
+	  } else if (period === 'week') {
+	    const monday = new Date(now);
+	    const currentDay = monday.getDay() === 0 ? 7 : monday.getDay(); // Воскресенье = 7
+	    monday.setDate(monday.getDate() - currentDay + 1 + offset * 7);
+	    monday.setHours(0, 0, 0, 0);
+	    const sunday = new Date(monday);
+	    sunday.setDate(monday.getDate() + 6);
+
+	    return dates.filter(dateStr => {
+	      const d = new Date(dateStr);
+	      return d >= monday && d <= sunday;
+	    });
+	  }
+	  // Если нет фильтра - возвращаем все
+	  return dates;
+	}
+
+  function filterIntervalsByPeriod(intervals: IntervalGroup[], period: 'week' | 'month', offset: number): IntervalGroup[] {
+	  const now = new Date();
+
+	  if (period === 'month') {
+	    const year = now.getFullYear();
+	    const month = now.getMonth() + offset;
+	    const monthStart = new Date(year, month, 1);
+	    const monthEnd = new Date(year, month + 1, 0);
+
+	    return intervals.filter(({ startDate, endDate }) => {
+	      const start = new Date(startDate);
+	      const end = new Date(endDate);
+	      // Отфильтровать интервалы, которые частично пересекаются с выбранным месяцем
+	      return end >= monthStart && start <= monthEnd;
+	    });
+
+	  } else if (period === 'week') {
+	    const monday = new Date(now);
+	    const currentDay = monday.getDay() === 0 ? 7 : monday.getDay();
+	    monday.setDate(monday.getDate() - currentDay + 1 + offset * 7);
+	    monday.setHours(0, 0, 0, 0);
+	    const sunday = new Date(monday);
+	    sunday.setDate(monday.getDate() + 6);
+
+	    return intervals.filter(({ startDate, endDate }) => {
+	      const start = new Date(startDate);
+	      const end = new Date(endDate);
+	      return end >= monday && start <= sunday;
+	    });
+	  }
+
+	  return intervals;
+	}
+
+
+  function generateAllDatesInInterval(startDate: string, endDate: string): string[] {
+	  const dates = [];
+	  let current = new Date(startDate);
+	  const end = new Date(endDate);
+
+	  while (current <= end) {
+	    dates.push(current.toISOString().slice(0, 10));
+	    current.setDate(current.getDate() + 1);
+	  }
+	  return dates;
+	}
+
 
   const SortButton = () => {
 	  const labelMap = {
@@ -230,7 +309,6 @@ export function ExcelLikeTableView({
         <div
           key={row.id}
           style={{
-            border: '1px solid #ccc',
             border: (row.priority && !isClientView) ? '2px solid #ea580c' : '1px solid #ccc',
             borderRadius: 8,
             padding: 12,
@@ -567,8 +645,23 @@ export function ExcelLikeTableView({
     });
   };
 
+  const extendedDates = useMemo(() => {
+	  const dateSet = new Set<string>(uniqueDates);
+
+	  dateGroups.forEach(interval => {
+	    const intervalDates = generateAllDatesInInterval(interval.startDate, interval.endDate);
+	    intervalDates.forEach(date => dateSet.add(date));
+	  });
+
+	  return Array.from(dateSet).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+	}, [uniqueDates, dateGroups]);
+
   // Объединяем даты и интервалы игрока с местом вставки итогов после каждой даты интервала
-  const mergedTabs = useMemo(() => mergeDatesWithIntervals(uniqueDates, dateGroups), [uniqueDates, dateGroups]);
+  const filteredDates = useMemo(() => filterDatesByPeriod(extendedDates, filterPeriod, periodOffset), [extendedDates, filterPeriod, periodOffset]);
+  const filteredDateGroups = useMemo(() => filterIntervalsByPeriod(dateGroups, filterPeriod, periodOffset), [dateGroups, filterPeriod, periodOffset]);
+
+  const mergedTabs = useMemo(() => mergeDatesWithIntervals(filteredDates, filteredDateGroups), [filteredDates, filteredDateGroups]);
+
 
   // Состояние выбраной вкладки — изначально null (или 0)
   const [selectedTab, setSelectedTab] = useState<number>(0);

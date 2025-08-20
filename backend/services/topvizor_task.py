@@ -362,24 +362,26 @@ async def get_or_start_positions(session_http: aiohttp.ClientSession, project_id
     return None
 
 
-async def main_task(project_id: UUID):
+async def main_task(project_ids: List[UUID]):
     semaphore = asyncio.Semaphore(1)
+    date_today = datetime.utcnow().strftime("%Y-%m-%d")
 
     async with aiohttp.ClientSession() as session_http, AsyncSessionLocal() as session_db:
+        # Получаем все проекты из списка с группами и ключами
         result = await session_db.execute(
             select(Project)
-            .options(
-                selectinload(Project.groups).selectinload(Group.keywords)
-            )
-            .where(Project.id == project_id)
+            .options(selectinload(Project.groups).selectinload(Group.keywords))
+            .where(Project.id.in_(project_ids))
         )
-        project = result.scalar_one_or_none()
-        if not project:
-            logger.error(f"Project with id={project_id} not found")
-            return False, "not_found"
+        projects = result.scalars().all()
+        if not projects:
+            logger.error("No projects found for provided ids")
+            return False, "no_projects"
 
+        groups_to_wait = []
         failed = []
 
+        # Функция для проверки ошибки доступа
         def has_access_error(response):
             if isinstance(response, dict) and "errors" in response:
                 for err in response["errors"]:
@@ -387,110 +389,102 @@ async def main_task(project_id: UUID):
                         return True
             return False
 
-        date_today = datetime.utcnow().strftime("%Y-%m-%d")
-
-        for group in project.groups:
-            group_topvisor_id = group.topvisor_id
-            if not group_topvisor_id:
-                logger.warning(f"Group {group.title} does not have topvisor_id, skipped")
-                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                continue
-
-            logger.info(f"Processing group {group.title} with Topvisor ID {group_topvisor_id}")
-
-            # Получаем регион из группы
-            region_key, region_index = await get_region_key_index_static(group.region) or (213, 1)
-
-            # Получаем информацию по группе-проекту в Topvisor
-            try:
-                data = await get_project_info_by_topvizor(group_topvisor_id)
-                logger.info(f"Topvisor group info for {group.title}: {data}")
-                if has_access_error(data):
-                    logger.error(f"Access denied for group info of {group.title}")
+        # 1-й этап: проверка позиций и запуск процессов при необходимости
+        for project in projects:
+            for group in project.groups:
+                if not group.topvisor_id or not group.keywords:
                     failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
                     continue
-            except Exception as e:
-                logger.error(f"Error getting group info from Topvisor for {group.title}: {e}", exc_info=True)
-                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                continue
+                region_key, region_index = await get_region_key_index_static(group.region) or (213, 1)
 
-            # Добавляем поисковика для группы/проекта в Topvisor
-            try:
-                resp = await add_searcher_to_project(session_http, group_topvisor_id, searcher_key=0)
-                if has_access_error(resp):
-                    logger.error(f"Access denied adding searcher for group {group.title}")
-                    failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                    continue
-            except Exception as e:
-                logger.error(f"Error adding searcher to group {group.title}: {e}", exc_info=True)
-                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                continue
+                # Проверяем наличие позиций
+                positions = await get_positions_topvisor(session_http, group.topvisor_id, region_index, date_today,
+                                                         searcher_key=0)
+                if positions and all(
+                        isinstance(item.get("positionsData"), dict) and len(item["positionsData"]) > 0 for item in
+                        positions):
+                    # Есть позиции - сразу обрабатываем и сохраняем
+                    volumes_data = await get_keyword_volumes(session_http, group.topvisor_id, region_key,
+                                                             searcher_key=0, type_volume=1)
 
-            # Добавляем регион поисковика для группы
-            try:
-                resp = await add_searcher_region(session_http, group_topvisor_id, searcher_key=0, region_key=region_key)
-                if has_access_error(resp):
-                    logger.error(f"Access denied adding searcher region for group {group.title}")
-                    failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                    continue
-            except Exception as e:
-                logger.error(f"Error adding searcher region to group {group.title}: {e}", exc_info=True)
-                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
-                continue
+                    frequency_map = {}
+                    if volumes_data:
+                        volume_field_name = None
+                        first_volume_item = volumes_data[0] if len(volumes_data) > 0 else {}
+                        for field in first_volume_item.keys():
+                            if field.startswith("volume:"):
+                                volume_field_name = field
+                                break
+                        if volume_field_name:
+                            for item in volumes_data:
+                                name = item.get("name", "").lower()
+                                val = item.get(volume_field_name)
+                                try:
+                                    frequency_map[name] = int(val) if val is not None else None
+                                except Exception:
+                                    frequency_map[name] = None
 
-            # Получаем позиции для группы в Topvisor
-            positions_data = await get_or_start_positions(session_http, group_topvisor_id, region_index, date_today)
-            volumes_data = await get_keyword_volumes(session_http, group_topvisor_id, region_key, searcher_key=0,
-                                                     type_volume=1)
+                    for kw in [k for k in group.keywords if k.is_check]:
+                        try:
+                            await process_keyword_wrapper(
+                                semaphore, session_db, positions, frequency_map, kw,
+                                project.domain, project.id, failed, region_index,
+                                date_today, group.topvisor_id
+                            )
+                        except Exception as e:
+                            logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}",
+                                         exc_info=True)
+                            failed.append((project.id, kw.id))
 
-            frequency_map = {}
-            if volumes_data:
-                volume_field_name = None
-                first_volume_item = volumes_data[0] if len(volumes_data) > 0 else {}
-                for field in first_volume_item.keys():
-                    if field.startswith("volume:"):
-                        volume_field_name = field
-                        break
-                if volume_field_name:
-                    for item in volumes_data:
-                        name = item.get("name", "").lower()
-                        val = item.get(volume_field_name)
-                        if val is not None:
+                    await session_db.commit()
+                else:
+                    # Нет позиций - запускаем процесс снятия
+                    start_resp = await start_topvisor_position_check(session_http, group.topvisor_id)
+                    if not start_resp:
+                        logger.error(f"Failed to start position check for group {group.title}")
+                        failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
+                        continue
+                    groups_to_wait.append((group, region_index, project))
+
+        # 2-й этап: ожидание результатов снятия и обработка
+        for group, region_index, project in groups_to_wait:
+            positions = await wait_for_positions(session_http, group.topvisor_id, region_index)
+            if positions:
+                volumes_data = await get_keyword_volumes(session_http, group.topvisor_id, region_index, searcher_key=0,
+                                                         type_volume=1)
+                frequency_map = {}
+                if volumes_data:
+                    volume_field_name = None
+                    first_volume_item = volumes_data[0] if len(volumes_data) > 0 else {}
+                    for field in first_volume_item.keys():
+                        if field.startswith("volume:"):
+                            volume_field_name = field
+                            break
+                    if volume_field_name:
+                        for item in volumes_data:
+                            name = item.get("name", "").lower()
+                            val = item.get(volume_field_name)
                             try:
-                                frequency_map[name] = int(val)
+                                frequency_map[name] = int(val) if val is not None else None
                             except Exception:
                                 frequency_map[name] = None
 
-            # Обрабатываем ключи с передачей и позиций, и частотности
-            for kw in [k for k in group.keywords if k.is_check]:
-                try:
-                    await process_keyword_wrapper(
-                        semaphore,
-                        session_db,
-                        positions_data,
-                        frequency_map,
-                        kw,
-                        project.domain,
-                        project.id,
-                        failed,
-                        region_index,
-                        date_today,
-                        group_topvisor_id,
-                    )
+                for kw in [k for k in group.keywords if k.is_check]:
+                    try:
+                        await process_keyword_wrapper(
+                            semaphore, session_db, positions, frequency_map, kw,
+                            project.domain, project.id, failed, region_index,
+                            date_today, group.topvisor_id
+                        )
+                    except Exception as e:
+                        logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}",
+                                     exc_info=True)
+                        failed.append((project.id, kw.id))
 
-                except Exception as e:
-                    logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}", exc_info=True)
-                    failed.append((project.id, kw.id))
-
-        # Коммитим один раз после обработки всех групп
-        try:
-            await session_db.commit()
-            logger.info(f"Database commit successful for project {project.domain}")
-        except Exception as e:
-            logger.error(f"Error during DB commit for project {project.domain}: {e}", exc_info=True)
-            await session_db.rollback()
-
-        logger.info(f"Position update completed for project {project.domain}. Failed keywords count: {len(failed)}")
+                await session_db.commit()
+            else:
+                logger.warning(f"Positions not received for group {group.title} after waiting")
+                failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
 
         return True, None
 
@@ -526,7 +520,7 @@ async def run_main_task_async(self):
             result = await session_db.execute(
                 select(Project)
                 .join(Project.groups)
-                .where(Group.topvizor_id.isnot(None))
+                .where(Group.topvisor_id.isnot(None))
                 .options(
                     selectinload(Project.groups).selectinload(Group.keywords),
                 )
@@ -535,39 +529,25 @@ async def run_main_task_async(self):
 
             if not projects:
                 logger.info("No projects with topvisor_id found for processing.")
-                # Обновляем статус задачи в базе
                 task_status.status = "completed"
                 task_status.finished_at = datetime.utcnow()
                 task_status.result = {"message": "No projects found"}
                 await session_db.commit()
                 return {"message": "No projects found"}
 
-            logger.info(f"Found {len(projects)} projects to process.")
+            project_ids = [project.id for project in projects]
+            logger.info(f"Found {len(project_ids)} projects to process.")
+
+            # Передаем список id проектов в main_task
+            success, error = await main_task(project_ids)
 
             failed = []
             access_denied_domains = []
 
-            for project in projects:
-                logger.info(f"Start processing project id={project.id}, domain={project.domain}")
-                try:
-                    success, error = await main_task(project.id)
-
-                    if not success:
-                        logger.warning(f"Project {project.domain} processing failed with error: {error}")
-                        failed.append(str(project.id))
-                        if error == "access_denied":
-                            access_denied_domains.append(project.domain)
-                        continue
-                    logger.info(f"Finished processing project id={project.id}, domain={project.domain}")
-                except Exception as e:
-                    logger.error(f"Error processing project id={project.id}: {e}", exc_info=True)
-                    failed.append(str(project.id))
-
-            if access_denied_domains:
-                logger.warning(f"Projects skipped due to access denied: {access_denied_domains}")
-
-            if failed:
-                logger.warning(f"Failed projects: {failed}")
+            if not success:
+                logger.warning(f"Processing failed with error: {error}")
+                # Здесь можно обработать ошибку, например, все проекты считать неудачными
+                failed = [str(pid) for pid in project_ids]
             else:
                 logger.info("All projects processed successfully.")
 
