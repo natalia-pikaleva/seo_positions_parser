@@ -125,6 +125,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       price_top_1_3: 0,
       price_top_4_5: 0,
       price_top_6_10: 0,
+      priority: false,
     });
   };
 
@@ -145,34 +146,51 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
   };
 
   const save = async () => {
-    const trimmed = formState.keyword.trim();
-    if (!trimmed) {
-      alert('Введите ключевое слово');
-      return;
-    }
+    if (isAdding) {
+      // В режиме добавления разбиваем на строки и создаем ключи по одному
+      const keysArray = formState.keyword
+        .split('\n')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
 
-    try {
-      if (isAdding) {
-	    await onAddKeyword({
-	      keyword: trimmed,
-	      price_top_1_3: formState.price_top_1_3,
-	      price_top_4_5: formState.price_top_4_5,
-	      price_top_6_10: formState.price_top_6_10,
-	      priority: formState.priority,
-	    });
-	  } else if (editingKeyword) {
-	    await onUpdateKeyword(editingKeyword.id, {
-	      keyword: trimmed,
-	      price_top_1_3: formState.price_top_1_3,
-	      price_top_4_5: formState.price_top_4_5,
-	      price_top_6_10: formState.price_top_6_10,
-	      priority: formState.priority,
-	    });
+      if (keysArray.length === 0) {
+        alert('Введите хотя бы одно ключевое слово');
+        return;
       }
-      cancel();
-    } catch (error: any) {
-      console.error('Ошибка при обновлении ключевых слов', error);
-      alert(error.message || 'Не удалось сохранить изменения');
+
+      try {
+        for (const k of keysArray) {
+          await onAddKeyword({
+            keyword: k,
+            price_top_1_3: formState.price_top_1_3,
+            price_top_4_5: formState.price_top_4_5,
+            price_top_6_10: formState.price_top_6_10,
+            priority: formState.priority,
+          });
+        }
+        cancel();
+      } catch (error: any) {
+        alert(error.message || 'Ошибка при добавлении ключевых слов');
+      }
+    } else if (editingKeyword) {
+      // Редактирование одиночного ключа — без изменений
+      const trimmed = formState.keyword.trim();
+      if (!trimmed) {
+        alert('Введите ключевое слово');
+        return;
+      }
+      try {
+        await onUpdateKeyword(editingKeyword.id, {
+          keyword: trimmed,
+          price_top_1_3: formState.price_top_1_3,
+          price_top_4_5: formState.price_top_4_5,
+          price_top_6_10: formState.price_top_6_10,
+          priority: formState.priority,
+        });
+        cancel();
+      } catch (error: any) {
+        alert(error.message || 'Не удалось сохранить изменения');
+      }
     }
   };
 
@@ -194,14 +212,15 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
       {(isAdding || editingKeyword) && (
         <div className="space-y-4 mb-4 p-4 border border-gray-300 rounded bg-gray-50">
           {isAdding ? (
-			<input
-			    type="text"
-			    className="border border-gray-300 rounded px-3 py-2 w-full"
-			    value={formState.keyword}
-			    onChange={e => setFormState({ ...formState, keyword: e.target.value })}
-			    placeholder="Введите ключевое слово"
-			  />
-			) : (
+            <textarea
+              rows={5}
+              className="border border-gray-300 rounded px-3 py-2 w-full resize-y"
+              value={formState.keyword}
+              onChange={e => setFormState({ ...formState, keyword: e.target.value })}
+              placeholder="Введите ключевые слова, каждое с новой строки"
+            />
+          ) : (
+
 			  <div className="px-3 py-2 bg-gray-100 rounded border border-gray-300 w-full select-none">
 			    {formState.keyword}
 			  </div>
@@ -268,7 +287,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
           onClick={startAdd}
           className="mb-4 w-auto self-start sm:w-auto bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
         >
-          Добавить ключевое слово
+          Добавить ключевые слова (списком)
         </button>
       )}
 
