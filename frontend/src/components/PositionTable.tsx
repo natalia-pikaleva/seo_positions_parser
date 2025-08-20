@@ -533,6 +533,8 @@ console.log('dateGroups:', extendedDateGroups);
 		      intervalSums={intervalSums}
 		      dateGroups={extendedDateGroups}
 		      isClientView={isClientView}
+		      filterPeriod={filter.period}
+              periodOffset={periodOffset}
 			/>
 		</div>
 
