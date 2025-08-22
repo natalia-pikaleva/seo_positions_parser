@@ -196,6 +196,27 @@ export const createKeyword = async (
   return response.json();
 };
 
+// Загрузка ключей из файла Эксель
+export const uploadKeywordsFile = async (
+  groupId: string,
+  file: File
+): Promise<{ inserted_count: number; keywords: Keyword[] }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/groups/${groupId}/keywords/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to upload keywords file');
+  }
+
+  return response.json();
+};
+
 export const deleteKeyword = async (groupId: string, keywordId: string): Promise<void> => {
   const response = await fetch(`${API_BASE}/groups/${groupId}/keywords/${keywordId}`, {
     method: 'DELETE',

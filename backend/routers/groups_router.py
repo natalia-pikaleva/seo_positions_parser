@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, status
+from fastapi import APIRouter, HTTPException, Depends, Query, status, UploadFile, File
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +6,10 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta, date
 import logging
+from io import BytesIO
+import pandas as pd
+import logging
+
 from database.db_init import get_db
 from database.models import Project, Keyword, Position, Group, SearchEngineEnum
 from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
@@ -13,7 +17,6 @@ from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
                              KeywordCreate, KeywordUpdate, KeywordOut,
                              IntervalSumOut, KeywordIntervals, GroupOut,
                              GroupCreate, GroupUpdate)
-
 
 from services.topvizor_utils import (create_project_in_topvisor,
                                      add_or_update_keyword_topvisor,
@@ -331,6 +334,86 @@ async def create_keyword(group_id: UUID, keyword_in: KeywordCreate, db: AsyncSes
     except Exception as e:
         logging.error(f"Ошибка при создании ключевого слова: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create keyword")
+
+
+@router.post("/{group_id}/keywords/upload")
+async def upload_keywords(
+        group_id: UUID,
+        file: UploadFile = File(...),
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        # Проверяем что группа существует
+        group = await db.get(Group, group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # Проверяем расширение файла
+        if not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+            raise HTTPException(status_code=400, detail="Invalid file type. Only Excel files are allowed.")
+
+        # Считываем файл Excel в DataFrame
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents))
+
+        # Ожидаем, что в файле есть колонки: keyword, price_top_1_3, price_top_4_5, price_top_6_10 (можно настроить)
+        required_columns = {"ключевой запрос", "топ-3", "топ-5", "топ-10"}
+
+        if not required_columns.issubset(df.columns.str.lower()):
+            raise HTTPException(status_code=400, detail=f"Excel файл должен содержать колонки: {required_columns}")
+
+        # Приводим имена колонок к нижнему регистру для удобства
+        df.columns = map(str.lower, df.columns)
+        inserted_keywords = []
+
+        for _, row in df.iterrows():
+            keyword_str = str(row["ключевой запрос"]).strip()
+
+            price_top_1_3 = row.get("топ-3", None)
+            price_top_4_5 = row.get("топ-5", None)
+            price_top_6_10 = row.get("топ-10", None)
+
+            # Проверяем, что ключ еще не существует в группе
+            existing_keyword = await db.execute(
+                select(Keyword).where(Keyword.group_id == group_id, Keyword.keyword == keyword_str)
+            )
+            if existing_keyword.scalar_one_or_none():
+                logging.info(f"Keyword already exists and будет пропущен: {keyword_str}")
+                continue
+
+            # Добавляем ключ в Topvisor
+            response = await add_or_update_keyword_topvisor(group.topvisor_id, keyword_str)
+            if not response or "result" not in response:
+                logging.error(f"Не удалось добавить ключевое слово в Topvisor: {keyword_str}")
+                continue  # Пропускаем этот ключ, но не прерываем весь процесс
+
+            # Создаем экземпляр Keyword и сохраняем в базу
+            new_keyword = Keyword(
+                group_id=group_id,
+                keyword=keyword_str,
+                priority=False,
+                price_top_1_3=price_top_1_3,
+                price_top_4_5=price_top_4_5,
+                price_top_6_10=price_top_6_10,
+                is_check=True
+            )
+            db.add(new_keyword)
+            inserted_keywords.append(new_keyword)
+
+        # Коммитим все добавленные ключи
+        await db.commit()
+
+        # Обновляем объекты, чтобы получить id и данные из базы
+        for keyword in inserted_keywords:
+            await db.refresh(keyword)
+
+        return {"inserted_count": len(inserted_keywords), "keywords": inserted_keywords}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Ошибка при загрузке ключевых слов из файла: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload keywords from file")
 
 
 @router.put("/{group_id}/keywords/{keyword_id}", response_model=KeywordOut)

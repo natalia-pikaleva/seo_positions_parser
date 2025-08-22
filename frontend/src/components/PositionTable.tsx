@@ -9,7 +9,8 @@ import {
   updateKeyword,
   deleteKeyword,
   runProjectParsing,
-  fetchGroup
+  fetchGroup,
+  uploadKeywordsFile
 } from '../utils/api';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { KeywordManager } from './KeywordManager';
@@ -96,245 +97,234 @@ export const PositionTable: React.FC<PositionTableProps> = ({
   domain,
   groups
 }) => {
-	  const [periodOffset, setPeriodOffset] = useState(0);
-	  const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
-	  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
-	  const [editableGroup, setEditableGroup] = useState<Group>(group);
-	  const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
-	  const [groupCreatedAt, setGroupCreatedAt] = useState<Date | null>(null);
-	  const [keywordFilter, setKeywordFilter] = useState('');
-	  const [positions, setPositions] = useState<Position[]>([]);
-	  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
-	  const [parsing, setParsing] = useState(false);
-      const [parsingMsg, setParsingMsg] = useState<string | null>(null);
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
+  const [intervalSums, setIntervalSums] = useState<Record<string, Record<string, number>>>({});
+  const [editableGroup, setEditableGroup] = useState<Group>(group);
+  const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
+  const [groupCreatedAt, setGroupCreatedAt] = useState<Date | null>(null);
+  const [keywordFilter, setKeywordFilter] = useState('');
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [serverIntervals, setServerIntervals] = useState< { dates: Date[]; startDate: string; endDate: string }[] >([]);
+  const [parsing, setParsing] = useState(false);
+  const [parsingMsg, setParsingMsg] = useState<string | null>(null);
+
+  // Объединяем ключевые слова из всех групп в один массив при клиентском режиме:
+  const aggregatedKeywords = useMemo(() => {
+    if (!isClientView || !groups || groups.length === 0) return group.keywords || [];
+
+    const keywordsMap: Record<string, typeof groups[0]['keywords'][0]> = {};
+    groups.forEach(g => {
+      g.keywords.forEach(k => {
+        keywordsMap[k.id] = k;
+      });
+    });
+    return Object.values(keywordsMap);
+  }, [isClientView, groups, group.keywords]);
+
+  // Формируем агрегированную "группу" для рендера
+  const aggregatedGroup = useMemo(() => {
+    if (!isClientView) return group;
+
+    const firstGroup = groups && groups.length > 0 ? groups[0] : null;
+
+    return {
+      ...firstGroup,
+      id: 0, // произвольный id
+      keywords: aggregatedKeywords,
+    } as Group;
+  }, [isClientView, groups, aggregatedKeywords, group]);
+
+  const displayGroup = isClientView ? aggregatedGroup : editableGroup;
+
+  useEffect(() => {
+    async function loadPositions() {
+      if (isClientView && groups && groups.length > 0) {
+        try {
+          const results = await Promise.all(
+            groups.map(g => fetchPositions(g.id, filter.period, periodOffset))
+          );
+          setPositions(results.flat());
+        } catch (error) {
+          console.error('Ошибка загрузки позиций для клиента', error);
+          setPositions([]);
+        }
+      } else if (group?.id) {
+        try {
+          const data = await fetchPositions(group.id, filter.period, periodOffset);
+          setPositions(data);
+        } catch (error) {
+          console.error('Ошибка загрузки позиций', error);
+          setPositions([]);
+        }
+      }
+    }
+    loadPositions();
+  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
 
 
+  async function loadIntervalSums() {
+	  if (isClientView && groups && groups.length > 0) {
+	    try {
+	      // Запросы по всем группам, результат - массив data для каждой группы
+	      const results = await Promise.all(
+	        groups.map(g => fetchPositionsIntervals(g.id, filter.period, periodOffset))
+	      );
 
+	      // Формируем общий intervalSums
+	      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
 
-      // Объединяем ключевые слова из всех групп в один массив при клиентском режиме:
-      const aggregatedKeywords = useMemo(() => {
-	    if (!isClientView || !groups || groups.length === 0) return group.keywords || [];
-
-	    const keywordsMap: Record<string, typeof groups[0]['keywords'][0]> = {};
-	    groups.forEach(g => {
-	      g.keywords.forEach(k => {
-	        keywordsMap[k.id] = k;
+	      results.forEach(data => {
+	        data.forEach(({ keyword_id, intervals }) => {
+	          if (!sumsMap[keyword_id]) sumsMap[keyword_id] = {};
+	          intervals.forEach(interval => {
+	            const label = `${interval.start_date} - ${interval.end_date}`;
+	            sumsMap[keyword_id][label] = {
+	              daysTop3: interval.days_top3 ?? 0,
+	              costTop3: interval.cost_top3 ?? 0,
+	              daysTop5: interval.days_top5 ?? 0,
+	              costTop5: interval.cost_top5 ?? 0,
+	              daysTop10: interval.days_top10 ?? 0,
+	              costTop10: interval.cost_top10 ?? 0,
+	              sumCost: interval.sum_cost ?? 0,
+	            };
+	          });
+	        });
 	      });
-	    });
-	    return Object.values(keywordsMap);
-	  }, [isClientView, groups, group.keywords]);
 
-	  // Формируем агрегированную "группу" для рендера
-	  const aggregatedGroup = useMemo(() => {
-	    if (!isClientView) return group;
+	      setIntervalSums(sumsMap);
 
-	    const firstGroup = groups && groups.length > 0 ? groups[0] : null;
-
-	    return {
-	      ...firstGroup,
-	      id: 0, // произвольный id
-	      keywords: aggregatedKeywords,
-	    } as Group;
-	  }, [isClientView, groups, aggregatedKeywords, group]);
-
-	  const displayGroup = isClientView ? aggregatedGroup : editableGroup;
-
-	  useEffect(() => {
-        async function loadPositions() {
-	      if (isClientView && groups && groups.length > 0) {
-	        try {
-	          const results = await Promise.all(
-	            groups.map(g => fetchPositions(g.id, filter.period, periodOffset))
-	          );
-	          setPositions(results.flat());
-	        } catch (error) {
-	          console.error('Ошибка загрузки позиций для клиента', error);
-	          setPositions([]);
-	        }
-	      } else if (group?.id) {
-	        try {
-	          const data = await fetchPositions(group.id, filter.period, periodOffset);
-	          setPositions(data);
-	        } catch (error) {
-	          console.error('Ошибка загрузки позиций', error);
-	          setPositions([]);
-	        }
+	      // Формируем serverIntervals из интервалов первого keyword_id первой группы (примерно так)
+	      // Можно взять интервалы из первой группы в results
+	      if (results.length > 0 && results[0].length > 0 && results[0][0].intervals.length > 0) {
+	        // Используем интервалы из первой группы вручную для serverIntervals
+	        const intervalsGroups = results[0][0].intervals.map(interval => {
+	          const start = new Date(interval.display_start_date ?? interval.start_date);
+	          const end = new Date(interval.display_end_date ?? interval.end_date);
+	          const dates: Date[] = [];
+	          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	            dates.push(new Date(d));
+	          }
+	          return {
+	            dates,
+	            startDate: interval.start_date,
+	            endDate: interval.end_date,
+	            label: `${interval.start_date} - ${interval.end_date}`,
+	            displayLabel: `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`,
+	          };
+	        }).filter(group => group.dates.length > 0);
+	        setServerIntervals(intervalsGroups);
+	      } else {
+	        setServerIntervals([]);
 	      }
+
+	    } catch (error) {
+	      console.error('Ошибка загрузки интервалов для клиента:', error);
+	      setIntervalSums({});
+	      setServerIntervals([]);
 	    }
-	    loadPositions();
-	  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
+	  } else if (group?.id) {
+	    // Твоя текущая реализация для одиночной группы — можно оставить как есть
+	    try {
+	      const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
+	      console.log('Fetched positions intervals data:', data);
+	      console.log('Raw intervals from data[0]:', data[0]?.intervals);
+
+	      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
+	      data.forEach(({ keyword_id, intervals }) => {
+	        sumsMap[keyword_id] = {};
+	        intervals.forEach(interval => {
+	          const label = `${interval.start_date} - ${interval.end_date}`;
+	          sumsMap[keyword_id][label] = {
+	            daysTop3: interval.days_top3 ?? 0,
+	            costTop3: interval.cost_top3 ?? 0,
+	            daysTop5: interval.days_top5 ?? 0,
+	            costTop5: interval.cost_top5 ?? 0,
+	            daysTop10: interval.days_top10 ?? 0,
+	            costTop10: interval.cost_top10 ?? 0,
+	            sumCost: interval.sum_cost ?? 0,
+	          };
+	        });
+	      });
+	      setIntervalSums(sumsMap);
+
+	      if (data.length > 0 && data[0].intervals.length > 0) {
+	        const intervalsGroups = data[0].intervals.map(interval => {
+	          const start = new Date(interval.display_start_date ?? interval.start_date);
+	          const end = new Date(interval.display_end_date ?? interval.end_date);
+	          const dates: Date[] = [];
+	          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+	            dates.push(new Date(d));
+	          }
+	          return {
+	            dates,
+	            startDate: interval.start_date,
+	            endDate: interval.end_date,
+	            label: `${interval.start_date} - ${interval.end_date}`,
+	            displayLabel: `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`,
+	          };
+	        }).filter(group => group.dates.length > 0);
+	        setServerIntervals(intervalsGroups);
+	      } else {
+	        setServerIntervals([]);
+	      }
+	    } catch (error) {
+	      console.error('Ошибка загрузки интервалов:', error);
+	      setIntervalSums({});
+	      setServerIntervals([]);
+	    }
+	  }
+	}
+
+  useEffect(() => {
+    loadIntervalSums();
+  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
+
+  useEffect(() => {
+	  console.log('serverIntervals:', serverIntervals);
+	}, [serverIntervals]);
+
+  const dates = useMemo(() => {
+	  if (filter.period === 'week') {
+	    return getDatesForPeriod('week', periodOffset);
+	  }
+	  if (filter.period === 'month') {
+	    return getDatesForCurrentMonth(periodOffset);
+	  }
+	  return [];
+	}, [filter.period, periodOffset]);
+
+  const headerDates = useMemo(() => {
+	  if (filter.period === 'week') {
+	    return getDatesForPeriod('week', periodOffset);
+	  }
+	  if (filter.period === 'month') {
+	    return getDatesForCurrentMonth(periodOffset);
+	  }
+	  return [];
+	}, [filter.period, periodOffset]);
 
 
+  const biweeklyIntervals = useMemo(() => {
+	  if (filter.period !== 'month' || !groupCreatedAt) return [];
 
+	  const monthStart = dates[0];
+	  const monthEnd = dates[dates.length - 1];
 
-	  async function loadIntervalSums() {
-		  if (isClientView && groups && groups.length > 0) {
-		    try {
-		      // Запросы по всем группам, результат - массив data для каждой группы
-		      const results = await Promise.all(
-		        groups.map(g => fetchPositionsIntervals(g.id, filter.period, periodOffset))
-		      );
+	  // Генерируем интервалы от даты старта до конца текущего месяца
+	  const allIntervals = generateBiweeklyIntervalsFromStart(groupCreatedAt, monthEnd);
 
-		      // Формируем общий intervalSums
-		      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
-
-		      results.forEach(data => {
-		        data.forEach(({ keyword_id, intervals }) => {
-		          if (!sumsMap[keyword_id]) sumsMap[keyword_id] = {};
-		          intervals.forEach(interval => {
-		            const label = `${interval.start_date} - ${interval.end_date}`;
-		            sumsMap[keyword_id][label] = {
-		              daysTop3: interval.days_top3 ?? 0,
-		              costTop3: interval.cost_top3 ?? 0,
-		              daysTop5: interval.days_top5 ?? 0,
-		              costTop5: interval.cost_top5 ?? 0,
-		              daysTop10: interval.days_top10 ?? 0,
-		              costTop10: interval.cost_top10 ?? 0,
-		              sumCost: interval.sum_cost ?? 0,
-		            };
-		          });
-		        });
-		      });
-
-		      setIntervalSums(sumsMap);
-
-		      // Формируем serverIntervals из интервалов первого keyword_id первой группы (примерно так)
-		      // Можно взять интервалы из первой группы в results
-		      if (results.length > 0 && results[0].length > 0 && results[0][0].intervals.length > 0) {
-		        // Используем интервалы из первой группы вручную для serverIntervals
-		        const intervalsGroups = results[0][0].intervals.map(interval => {
-		          const start = new Date(interval.display_start_date ?? interval.start_date);
-		          const end = new Date(interval.display_end_date ?? interval.end_date);
-		          const dates: Date[] = [];
-		          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-		            dates.push(new Date(d));
-		          }
-		          return {
-		            dates,
-		            startDate: interval.start_date,
-		            endDate: interval.end_date,
-		            label: `${interval.start_date} - ${interval.end_date}`,
-		            displayLabel: `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`,
-		          };
-		        }).filter(group => group.dates.length > 0);
-		        setServerIntervals(intervalsGroups);
-		      } else {
-		        setServerIntervals([]);
-		      }
-
-		    } catch (error) {
-		      console.error('Ошибка загрузки интервалов для клиента:', error);
-		      setIntervalSums({});
-		      setServerIntervals([]);
-		    }
-		  } else if (group?.id) {
-		    // Твоя текущая реализация для одиночной группы — можно оставить как есть
-		    try {
-		      const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
-		      console.log('Fetched positions intervals data:', data);
-		      console.log('Raw intervals from data[0]:', data[0]?.intervals);
-
-		      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
-		      data.forEach(({ keyword_id, intervals }) => {
-		        sumsMap[keyword_id] = {};
-		        intervals.forEach(interval => {
-		          const label = `${interval.start_date} - ${interval.end_date}`;
-		          sumsMap[keyword_id][label] = {
-		            daysTop3: interval.days_top3 ?? 0,
-		            costTop3: interval.cost_top3 ?? 0,
-		            daysTop5: interval.days_top5 ?? 0,
-		            costTop5: interval.cost_top5 ?? 0,
-		            daysTop10: interval.days_top10 ?? 0,
-		            costTop10: interval.cost_top10 ?? 0,
-		            sumCost: interval.sum_cost ?? 0,
-		          };
-		        });
-		      });
-		      setIntervalSums(sumsMap);
-
-		      if (data.length > 0 && data[0].intervals.length > 0) {
-		        const intervalsGroups = data[0].intervals.map(interval => {
-		          const start = new Date(interval.display_start_date ?? interval.start_date);
-		          const end = new Date(interval.display_end_date ?? interval.end_date);
-		          const dates: Date[] = [];
-		          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-		            dates.push(new Date(d));
-		          }
-		          return {
-		            dates,
-		            startDate: interval.start_date,
-		            endDate: interval.end_date,
-		            label: `${interval.start_date} - ${interval.end_date}`,
-		            displayLabel: `${start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`,
-		          };
-		        }).filter(group => group.dates.length > 0);
-		        setServerIntervals(intervalsGroups);
-		      } else {
-		        setServerIntervals([]);
-		      }
-		    } catch (error) {
-		      console.error('Ошибка загрузки интервалов:', error);
-		      setIntervalSums({});
-		      setServerIntervals([]);
-		    }
-		  }
-		}
-
-
-
-	  useEffect(() => {
-	    loadIntervalSums();
-	  }, [group?.id, groups, filter.period, periodOffset, isClientView]);
-
-      useEffect(() => {
-  console.log('serverIntervals:', serverIntervals);
-}, [serverIntervals]);
-
-
-
-	  const dates = useMemo(() => {
-		  if (filter.period === 'week') {
-		    return getDatesForPeriod('week', periodOffset);
-		  }
-		  if (filter.period === 'month') {
-		    return getDatesForCurrentMonth(periodOffset);
-		  }
-		  return [];
-		}, [filter.period, periodOffset]);
-
-	  const headerDates = useMemo(() => {
-		  if (filter.period === 'week') {
-		    return getDatesForPeriod('week', periodOffset);
-		  }
-		  if (filter.period === 'month') {
-		    return getDatesForCurrentMonth(periodOffset);
-		  }
-		  return [];
-		}, [filter.period, periodOffset]);
-
-
-	  const biweeklyIntervals = useMemo(() => {
-		  if (filter.period !== 'month' || !groupCreatedAt) return [];
-
-		  const monthStart = dates[0];
-		  const monthEnd = dates[dates.length - 1];
-
-		  // Генерируем интервалы от даты старта до конца текущего месяца
-		  const allIntervals = generateBiweeklyIntervalsFromStart(groupCreatedAt, monthEnd);
-
-		  // Фильтруем интервалы, чтобы оставить только те, что пересекаются с текущим месяцем
-		  return allIntervals.filter(interval =>
-		    interval.endDate >= monthStart && interval.startDate <= monthEnd
-		  );
-		}, [filter.period, groupCreatedAt, dates]);
+	  // Фильтруем интервалы, чтобы оставить только те, что пересекаются с текущим месяцем
+	  return allIntervals.filter(interval =>
+	    interval.endDate >= monthStart && interval.startDate <= monthEnd
+	  );
+	}, [filter.period, groupCreatedAt, dates]);
 
   useEffect(() => {
 	  if (!isClientView) {
 	    setEditableGroup(group);
 	  }
 	}, [group, isClientView]);
-
-
 
   interface IntervalSumData {
 	  daysTop3: number;
@@ -345,7 +335,6 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	  costTop10: number;
 	  sumCost: number;
 	}
-
 
   // Вычисление последнего дня месяца с учётом periodOffset
   const getLastDayOfMonth = (date: Date): string => {
@@ -457,8 +446,39 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
     );
   }, [positions, filteredKeywords]);
 
-console.log('dateGroups:', extendedDateGroups);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+	  if (e.target.files?.length) {
+	    const file = e.target.files[0];
+	    setUploadError(null);
+	    setUploading(true);
+	    try {
+	      // Загрузка файла на бекенд
+	      await uploadKeywordsFile(editableGroup.id, file);
+	      // После успешной загрузки обновляем группу с ключами
+	      const refreshedGroup = await fetchGroup(editableGroup.id);
+	      setEditableGroup(refreshedGroup);
+	      onGroupLoaded(refreshedGroup);
+	    } catch (error: any) {
+	      setUploadError(error.message || 'Ошибка загрузки файла');
+	    } finally {
+	      setUploading(false);
+	      // Очистить input, чтобы можно было загрузить тот же файл заново, если нужно
+	      if (fileInputRef.current) {
+	        fileInputRef.current.value = '';
+	      }
+	    }
+	  }
+	};
+
+  const openFileDialog = () => {
+	  if (fileInputRef.current) {
+	    fileInputRef.current.click();
+	  }
+	};
 
 
   return (
@@ -488,13 +508,31 @@ console.log('dateGroups:', extendedDateGroups);
 		  </div>
 		  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full md:w-auto">
 		    {!isClientView && (
-			  <button
+			  <>
+			    <button
 			    onClick={() => setIsEditGroupOpen(true)}
 			    className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-			  >
-			    <Edit2 className="w-4 h-4" />
-			    Редактировать группу
-			  </button>
+			    >
+			      <Edit2 className="w-4 h-4" />
+			        Редактировать группу
+			    </button>
+			    <button
+			      onClick={openFileDialog}
+			      disabled={uploading}
+			      className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+			    >
+			      Загрузить новые ключи из файла
+			    </button>
+			    <input
+			      type="file"
+			      accept=".xlsx,.xls"
+			      ref={fileInputRef}
+			      onChange={handleFileChange}
+			      style={{ display: 'none' }}
+			    />
+			    {uploading && <p className="text-sm text-gray-600 mt-2">Загрузка файла...</p>}
+			    {uploadError && <p className="text-sm text-red-600 mt-2">{uploadError}</p>}
+			  </>
 			)}
 
 		  </div>
