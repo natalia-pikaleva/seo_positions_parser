@@ -145,7 +145,7 @@ async def create_new_group_for_all_projects(db: AsyncSession):
                     raise RuntimeError(f"Ошибка добавления поисковой системы")
 
                 # Добавляем регион
-                region_key_index = await get_region_key_index_static(new_group.region)
+                region_key_index = get_region_key_index_static(new_group.region)
                 if not region_key_index:
                     logging.error(f"Регион '{new_group.region}' не найден для группы '{new_group.title}'")
                     raise RuntimeError(f"Регион не найден")

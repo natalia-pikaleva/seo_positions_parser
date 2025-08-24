@@ -18,3 +18,4 @@ pandas
 openpyxl
 uvicorn
 aiohttp
+xlrd>=2.0.1
