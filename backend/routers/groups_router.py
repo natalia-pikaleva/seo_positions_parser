@@ -78,7 +78,7 @@ async def create_group(group_in: GroupCreate, db: AsyncSession = Depends(get_db)
                 raise HTTPException(status_code=500, detail="Ошибка добавления поисковой системы в Topvisor")
 
             # Получаем ключ региона
-            region_key, _ = await get_region_key_index_static(group_in.region)
+            region_key, _ = get_region_key_index_static(group_in.region)
             if region_key is None:
                 logging.error(f"Регион не найден для группы {group_in.title}")
                 raise HTTPException(status_code=400, detail="Некорректный регион")

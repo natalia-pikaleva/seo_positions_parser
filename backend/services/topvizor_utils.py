@@ -6,6 +6,8 @@ import asyncio
 from typing import List, Tuple, Optional
 from routers.schemas import GroupCreate
 import json
+import requests
+import time
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -190,7 +192,19 @@ async def get_project_info_by_topvizor(topvisor_project_id: int):
     #     raise
 
 
-async def retry_request(session_http, url, json_payload, headers, max_retries=5, delay=20):
+def retry_request(url, json_payload, headers, max_retries=5, delay=20):
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, json=json_payload, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.ConnectionError, requests.HTTPError, requests.Timeout, OSError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+            else:
+                raise e
+
+async def retry_request_async(session_http, url, json_payload, headers, max_retries=5, delay=20):
     for attempt in range(max_retries):
         try:
             async with session_http.post(url, json=json_payload, headers=headers) as resp:
@@ -202,8 +216,7 @@ async def retry_request(session_http, url, json_payload, headers, max_retries=5,
             else:
                 raise e
 
-
-async def get_region_key_index_static(region_name: str) -> Optional[Tuple[int, int]]:
+def get_region_key_index_static(region_name: str) -> Optional[Tuple[int, int]]:
     key_mapping = {
         "Москва": 213,
         "Санкт-Петербург": 2,
@@ -237,7 +250,7 @@ async def add_searcher_to_project(session_http: aiohttp.ClientSession, project_i
         "searcher_key": searcher_key  # 0 - Яндекс
     }
     try:
-        data = await retry_request(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
+        data = await retry_request_async(session_http, url, payload, headers, max_retries=max_retries, delay=delay)
         logger.info(f"Added searcher {searcher_key} to project {project_id}: {data}")
         if data is None or (isinstance(data, dict) and data.get("errors")):
             logger.error(
@@ -313,26 +326,26 @@ async def add_searcher_region(
         raise
 
 
-async def get_keyword_volumes(session_http: aiohttp.ClientSession, project_id: int, region_key: int, searcher_key: int, type_volume: int = 1):
+
+
+def get_keyword_volumes(project_id: int, region_key: int, searcher_key: int, type_volume: int = 1):
     url = "https://api.topvisor.com/v2/json/get/keywords_2/keywords/"
     headers = {
         "User-Id": TOPVIZOR_ID,
         "Authorization": TOPVIZOR_API_KEY,
         "Content-Type": "application/json"
     }
-    # Пример строки поля volume со всеми определителями
     volume_field = f"volume:{region_key}:{searcher_key}:{type_volume}"
 
     payload = {
         "project_id": project_id,
-        "fields": ["name", volume_field],
-        # Можно добавить фильтры, если надо
+        "fields": ["name", volume_field]
     }
 
     logger.info(f"Запрос частотности ключевых слов для проекта {project_id} с region_key={region_key} и searcher_key={searcher_key}")
 
     try:
-        data = await retry_request(session_http, url, payload, headers)
+        data = retry_request(url, payload, headers)
         logger.debug(f"Данные частотности: {json.dumps(data, indent=2, ensure_ascii=False)}")
         if "errors" in data:
             logger.error(f"Ошибка в ответе при запросе частотности: {data['errors']}")
@@ -341,4 +354,3 @@ async def get_keyword_volumes(session_http: aiohttp.ClientSession, project_id: i
     except Exception as e:
         logger.error(f"Ошибка запроса частотности по ключам для проекта {project_id}: {e}", exc_info=True)
         return None
-

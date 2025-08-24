@@ -9,7 +9,8 @@ import io
 import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
-from database.db_init import get_db
+
+from database.db_init import get_db, SyncSessionLocal
 from database.models import Project, Keyword, Position, Group, SearchEngineEnum, User, UserRole
 from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
                              ProjectOut, ClientProjectOut, PositionOut,
@@ -19,7 +20,7 @@ from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
 
 from services.api_utils import generate_client_link
 from services.auth_utils import get_current_user
-from services.topvizor_task import main_task
+from services.topvizor_task import run_main_task_one_project
 from services.topvizor_utils import (create_project_in_topvisor,
                                      add_or_update_keyword_topvisor,
                                      delete_keyword_topvisor,
@@ -254,7 +255,7 @@ async def delete_project(
         project_id: UUID,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user),
-        ):
+):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Удалить проект может только администратор")
 
@@ -300,19 +301,22 @@ async def delete_project(
 
 # --- Запуск обновления позиций (парсер) ---
 
+
 @router.post("/{project_id}/check")
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
-        await main_task([project_id])
-        project = await db.get(Project, project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        # project = await db.get(Project, project_id)
+        # if not project:
+        #     raise HTTPException(status_code=404, detail="Project not found")
 
+        # Запускаем фоновую задачу через Celery
+        run_main_task_one_project.delay(str(project_id))
         return {"message": f"Парсер запущен для проекта {project.domain}"}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Failed to check project: %s", e)
+        logger.error(f"Failed to check project: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # --- Экспорт в Excel ---

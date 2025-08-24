@@ -4,6 +4,8 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
 from dotenv import load_dotenv
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
 load_dotenv()
 
@@ -14,11 +16,13 @@ DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "seo_parser_db")
 
 DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-
 engine = create_async_engine(DATABASE_URL, echo=True)
-
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+# Для синхронного подключения
+DATABASE_URL_SYNC = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+engine_sync = create_engine(DATABASE_URL_SYNC)
+SyncSessionLocal = sessionmaker(engine_sync, expire_on_commit=False)
 
 
 class Base(AsyncAttrs, DeclarativeBase):
