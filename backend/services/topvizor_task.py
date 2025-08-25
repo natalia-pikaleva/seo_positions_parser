@@ -126,22 +126,29 @@ def process_single_keyword_position(session_db, position_data: list, frequency_m
                 positions_data = item.get("positionsData", {})
                 logger.info(f"PositionsData для ключа '{keyword.keyword}': {positions_data}")
 
-                key_for_date = f"{date}:{project_id}:{region_index}"
-                pos_info = positions_data.get(key_for_date)
+                key_for_date = f"{date}:{str(project_id)}:{region_index}"
+                logger.info(f"Ищем позицию по ключу: {key_for_date}")
+                pos_info = positions_data.get(key_for_date, {})
 
-                if pos_info is not None:
-                    pos_value = pos_info.get("position")
-                    if pos_value != "--" and pos_value is not None:
-                        try:
-                            position = int(pos_value)
-                            logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
-                        except (TypeError, ValueError) as e:
-                            logger.warning(
-                                f"Некорректное значение позиции для '{keyword.keyword}': {pos_value}, ошибка: {e}")
+                pos_value = pos_info.get("position")
+                position = None
+
+                if pos_value is not None and pos_value != "--":
+                    try:
+                        # Очищаем строку от пробелов и лишних символов перед преобразованием
+                        pos_value_clean = str(pos_value).strip()
+                        position = int(pos_value_clean)
+                        logger.info(f"Найдена позиция для ключа '{keyword.keyword}': {position}")
+                    except (TypeError, ValueError) as e:
+                        logger.warning(
+                        f"Некорректное значение позиции для '{keyword.keyword}': {pos_value}, ошибка: {e}")
+                else:
+                    logger.info(f"Позиция для ключа '{keyword.keyword}' отсутствует или равна '--'")
 
                 frequency = frequency_map.get(keyword_text)
                 logger.info(f"Частотность для ключа '{keyword.keyword}': {frequency}")
-                break
+
+                break  # нашли ключевое слово, дальше не ищем
 
         if position is None and (frequency is None or frequency == '-'):
             logger.info(f"Нет позиции и частотности для ключа '{keyword.keyword}', запись не создаётся")
@@ -268,7 +275,7 @@ def main_task(project_ids: List[UUID], session_db):
                 for kw in [k for k in group.keywords if k.is_check]:
                     try:
                         process_single_keyword_position(session_db, positions, frequency_map, kw,
-                                                        project.domain, project.id, region_index, date_today)
+                                                        project.domain, group.topvisor_id, region_index, date_today)
                     except Exception as e:
                         logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}",
                                      exc_info=True)
@@ -312,7 +319,7 @@ def main_task(project_ids: List[UUID], session_db):
             for kw in [k for k in group.keywords if k.is_check]:
                 try:
                     process_single_keyword_position(session_db, positions, frequency_map, kw,
-                                                    project.domain, project.id, region_index, date_today)
+                                                    project.domain, group.topvisor_id, region_index, date_today)
                 except Exception as e:
                     logger.error(f"Error processing keyword {kw.keyword} in group {group.title}: {e}",
                                  exc_info=True)
