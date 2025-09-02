@@ -372,6 +372,7 @@ async def export_positions_excel(
                 "Город": group.region if group else None,
                 "Дата": pos.checked_at.strftime("%Y-%m-%d"),
                 "Позиция": pos.position,
+                "Частотность": pos.frequency,
                 "Динамика": pos.previous_position,
                 "Тренд": pos.trend.value if pos.trend else None,
                 "Стоимость": pos.cost,
