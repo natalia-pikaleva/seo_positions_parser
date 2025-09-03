@@ -59,6 +59,7 @@ interface ExcelLikeTableViewProps {
   isClientView?: boolean;
   filterPeriod: 'week' | 'month';
   periodOffset: number;
+  onBackToProjectGroups?: () => void;
 }
 
 function mergeDatesWithIntervals(
@@ -157,7 +158,8 @@ export function ExcelLikeTableView({
   dateGroups,
   isClientView,
   filterPeriod,
-  periodOffset
+  periodOffset,
+  onBackToProjectGroups
 }: ExcelLikeTableViewProps): JSX.Element {
   const isMobile = useMediaQuery('(max-width:600px)');
 
@@ -617,8 +619,6 @@ export function ExcelLikeTableView({
   const getRowsByInterval = (intervalLabel: string) => {
     return keywords.map((kw, index) => {
       const data = intervalSums?.[kw.id]?.[intervalLabel] || {};
-      console.log('Keyword:', kw.id, 'Interval:', intervalLabel, 'Data:', data);
-
       const daysTop3 = data.daysTop3 ?? 0;
       const costTop3 = data.costTop3 ?? 0;
       const daysTop5 = data.daysTop5 ?? 0;
@@ -786,6 +786,7 @@ export function ExcelLikeTableView({
 
 
   return (
+	<>
 	  <Tabs selectedIndex={selectedTab} onSelect={setSelectedTab}>
 	    {/* Обертка для горизонтального скролла и рендеринга вкладок в ряд */}
 	    <div
@@ -818,7 +819,6 @@ export function ExcelLikeTableView({
 	        {/* Вкладки по датам и итогам */}
 	        {mergedTabs.map((tab, idx) => {
 	          // Консоль для отладки
-	          console.log(`Rendering Tab #${idx}`, tab.type, tab.value, tab.interval);
 
 	          const tabLabel =
 	            tab.type === 'date'
@@ -949,6 +949,9 @@ export function ExcelLikeTableView({
 	        }
 	      })}
 	    </Tabs>
+
+
+	  </>
 	);
 
 }

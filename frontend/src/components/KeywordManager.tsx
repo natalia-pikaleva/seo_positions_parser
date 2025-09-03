@@ -8,6 +8,7 @@ interface KeywordManagerProps {
   onAddKeyword: (keywordData: Omit<Keyword, 'id'>) => Promise<void>;
   onUpdateKeyword: (id: string, keywordData: Partial<KeywordUpdate>) => Promise<void>;
   onDeleteKeyword: (id: string) => Promise<void>;
+  onBackToProjectGroups?: () => void;
 }
 
 function PriceInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
@@ -53,6 +54,7 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
   onAddKeyword,
   onUpdateKeyword,
   onDeleteKeyword,
+  onBackToProjectGroups
 }) => {
   const [editingKeyword, setEditingKeyword] = useState<Keyword | null>(null);
   const [formState, setFormState] = useState<Omit<Keyword, 'id'>>({
@@ -205,8 +207,20 @@ export const KeywordManager: React.FC<KeywordManagerProps> = ({
     }
   };
 
+
+
   return (
     <div className="mb-6 flex flex-col h-full min-h-0">
+      {onBackToProjectGroups && (
+	        <button
+			  onClick={onBackToProjectGroups}
+			  className="mt-4 text-blue-600 hover:text-blue-800 font-medium text-left"
+			>
+			  ← Назад к группам
+			</button>
+
+	        )}
+      <br />
       <h3 className="text-lg font-semibold mb-2">Ключевые слова</h3>
 
       {(isAdding || editingKeyword) && (

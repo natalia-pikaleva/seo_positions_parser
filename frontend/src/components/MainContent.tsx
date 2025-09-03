@@ -44,6 +44,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   onDeleteProject,
   onProjectGroupLoaded,
 }) => {
+
+
   return (
     <main className="max-w-7xl mx-auto px-4 py-8">
       {currentView === 'dashboard' && !isClientAccess && (
@@ -54,6 +56,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           refreshProjects={refreshProjects}
           isClientView={false}
           onDeleteProject={onDeleteProject}
+          onBackToProjectGroups={onBackToProjectGroups}
         />
       )}
 
@@ -107,7 +110,9 @@ export const MainContent: React.FC<MainContentProps> = ({
             isClientView={isClientAccess}
             domain={selectedProject.domain}
             groups={selectedProject.groups}
+            onBackToProjectGroups={onBackToProjectGroups}
           />
+
         </div>
       )}
     </main>
