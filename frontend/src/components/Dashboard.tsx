@@ -12,6 +12,7 @@ interface DashboardProps {
   refreshProjects: () => Promise<void>;
   isClientView?: boolean;
   onDeleteProject: (projectId: string) => void;
+  onBackToProjectGroups: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -20,6 +21,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   refreshProjects,
   isClientView = false,
   onDeleteProject,
+  onBackToProjectGroups
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [taskStatus, setTaskStatus] = useState<any>(null);
@@ -150,7 +152,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 					    setSelectedProject(updatedProject);
 					  }
 					}}
-
+				  onBackToProjectGroups={handleBackToGroups}
 				/>
 	    </div>
 	  );

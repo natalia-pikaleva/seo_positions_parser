@@ -28,7 +28,8 @@ interface PositionTableProps {
   onUpdateGroup: (group: Group) => void;
   isClientView?: boolean;
   domain?: string;
-  groups: Group[]
+  groups: Group[];
+  onBackToProjectGroups?: () => void;
 }
 
 function getDatesForCurrentMonth(offset: number): Date[] {
@@ -95,7 +96,8 @@ export const PositionTable: React.FC<PositionTableProps> = ({
   onUpdateGroup,
   isClientView = false,
   domain,
-  groups
+  groups,
+  onBackToProjectGroups,
 }) => {
   const [periodOffset, setPeriodOffset] = useState(0);
   const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
@@ -227,8 +229,6 @@ export const PositionTable: React.FC<PositionTableProps> = ({
 	    // Твоя текущая реализация для одиночной группы — можно оставить как есть
 	    try {
 	      const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
-	      console.log('Fetched positions intervals data:', data);
-	      console.log('Raw intervals from data[0]:', data[0]?.intervals);
 
 	      const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
 	      data.forEach(({ keyword_id, intervals }) => {
@@ -573,7 +573,9 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 		      isClientView={isClientView}
 		      filterPeriod={filter.period}
               periodOffset={periodOffset}
+              onBackToProjectGroups={onBackToProjectGroups}
 			/>
+
 		</div>
 
         {/* Работа с ключевыми запросами */}
@@ -604,10 +606,13 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 			    onGroupLoaded({ ...editableGroup, keywords: updatedKeywords });
 			    setEditableGroup(prev => prev ? {...prev, keywords: updatedKeywords} : prev);
 			  }}
+		      onBackToProjectGroups={onBackToProjectGroups}
 			/>
 
 		  )}
-		</div>
+
+	     </div>
+
 
 
         {!isClientView && isEditGroupOpen && (

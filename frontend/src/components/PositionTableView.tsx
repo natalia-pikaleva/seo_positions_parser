@@ -168,7 +168,6 @@ export const PositionTableView: React.FC<Props> = ({
   formatDateKey,
 }) => {
   // Логируем данные для отладки
-	console.log('dateGroups:', dateGroups);
 
   return (
 	<>
