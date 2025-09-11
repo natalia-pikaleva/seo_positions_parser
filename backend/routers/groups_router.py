@@ -416,6 +416,77 @@ async def upload_keywords(
         raise HTTPException(status_code=500, detail="Failed to upload keywords from file")
 
 
+@router.post("/{group_id}/keywords/update_from_file")
+async def update_keywords_from_file(
+        group_id: UUID,
+        file: UploadFile = File(...),
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        # Проверяем что группа существует
+        group = await db.get(Group, group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # Проверяем расширение файла
+        if not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+            raise HTTPException(status_code=400, detail="Invalid file type. Only Excel files are allowed.")
+
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents))
+
+        # Ожидаем, что в файле есть колонки: "ключевой запрос", "топ-3", "топ-5", "топ-10"
+        required_columns = {"ключевое слово", "топ 3", "топ 5", "топ 10"}
+
+        if not required_columns.issubset(set(map(str.lower, df.columns))):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Excel файл должен содержать колонки: {required_columns}"
+            )
+
+        # Приводим имена колонок к нижнему регистру
+        df.columns = map(str.lower, df.columns)
+
+        # Загружаем все ключевые слова из базы для этой группы в словарь для быстрого поиска
+        result = await db.execute(select(Keyword).where(Keyword.group_id == group_id))
+        keywords_in_db = {kw.keyword: kw for kw in result.scalars().all()}
+
+        updated_count = 0
+        for _, row in df.iterrows():
+            keyword_str = str(row["ключевое слово"]).strip()
+            if keyword_str not in keywords_in_db:
+                # Ключевое слово из файла отсутствует в группе - пропускаем
+                logging.info(f"Keyword '{keyword_str}' not in group {group_id}, skipping update.")
+                continue
+
+            # Берем объект ключевого слова из базы
+            keyword_db = keywords_in_db[keyword_str]
+
+            # Обновляем цены, если они указаны (иначе оставляем как есть)
+            price_top_1_3 = row.get("топ 3")
+            price_top_4_5 = row.get("топ 5")
+            price_top_6_10 = row.get("топ 10")
+
+            if pd.notna(price_top_1_3):
+                keyword_db.price_top_1_3 = price_top_1_3
+            if pd.notna(price_top_4_5):
+                keyword_db.price_top_4_5 = price_top_4_5
+            if pd.notna(price_top_6_10):
+                keyword_db.price_top_6_10 = price_top_6_10
+
+            updated_count += 1
+
+        await db.commit()
+
+        return {"updated_count": updated_count}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Ошибка при обновлении ключевых слов из файла: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update keywords from file")
+
+
 @router.put("/{group_id}/keywords/{keyword_id}", response_model=KeywordOut)
 async def update_keyword(
         group_id: UUID,

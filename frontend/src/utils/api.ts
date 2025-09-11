@@ -217,6 +217,29 @@ export const uploadKeywordsFile = async (
   return response.json();
 };
 
+
+// Обновление ключей из файла Excel
+export const updateKeywordsFromFile = async (
+  groupId: string,
+  file: File
+): Promise<{ updated_count: number }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/groups/${groupId}/keywords/update_from_file`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to update keywords from file');
+  }
+
+  return response.json();
+};
+
+
 export const deleteKeyword = async (groupId: string, keywordId: string): Promise<void> => {
   const response = await fetch(`${API_BASE}/groups/${groupId}/keywords/${keywordId}`, {
     method: 'DELETE',

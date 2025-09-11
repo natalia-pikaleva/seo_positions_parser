@@ -10,7 +10,8 @@ import {
   deleteKeyword,
   runProjectParsing,
   fetchGroup,
-  uploadKeywordsFile
+  uploadKeywordsFile,
+  updateKeywordsFromFile
 } from '../utils/api';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { KeywordManager } from './KeywordManager';
@@ -480,6 +481,42 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 	  }
 	};
 
+  const updateFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Обработчик клика кнопки "Обновить ключи из файла"
+  const openUpdateFileDialog = () => {
+	  if (updateFileInputRef.current) {
+	    updateFileInputRef.current.click();
+	  }
+	};
+
+  // Обработчик выбора файла для обновления
+  const handleUpdateFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  if (e.target.files?.length) {
+    const file = e.target.files[0];
+    try {
+      setUploadError(null);
+      setUploading(true);
+
+      // Вызываем функцию обновления с новым эндпоинтом
+      const result = await updateKeywordsFromFile(editableGroup.id, file);
+
+      // По желанию, можно обновить группу с сервера, чтобы обновить UI
+      const refreshedGroup = await fetchGroup(editableGroup.id);
+      setEditableGroup(refreshedGroup);
+      onGroupLoaded(refreshedGroup);
+
+      alert(`Обновлено ключевых слов: ${result.updated_count}`);
+    } catch (error: any) {
+      setUploadError(error.message || 'Ошибка обновления ключей');
+    } finally {
+      setUploading(false);
+      if (updateFileInputRef.current) updateFileInputRef.current.value = '';
+    }
+  }
+};
+
+
 
   return (
 
@@ -530,6 +567,22 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 			      onChange={handleFileChange}
 			      style={{ display: 'none' }}
 			    />
+			    <button
+				  onClick={openUpdateFileDialog}
+				  className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors"
+				>
+				  Обновить ключи из файла
+				</button>
+				<input
+				  type="file"
+				  accept=".xlsx,.xls"
+				  ref={updateFileInputRef}
+				  onChange={handleUpdateFileChange}
+				  style={{ display: 'none' }}
+				/>
+
+
+
 			    {uploading && <p className="text-sm text-gray-600 mt-2">Загрузка файла...</p>}
 			    {uploadError && <p className="text-sm text-red-600 mt-2">{uploadError}</p>}
 			  </>
