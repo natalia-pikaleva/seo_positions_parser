@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, status
+from fastapi import APIRouter, Query
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
 from openpyxl.styles import PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 from database.db_init import get_db, SyncSessionLocal
 from database.models import Project, Keyword, Position, Group, SearchEngineEnum, User, UserRole
@@ -601,6 +602,19 @@ async def export_positions_pivot_excel(
                 for col in range(1, max_col + 1):
                     cell = ws.cell(row=row, column=col)
                     cell.border = thin_border
+
+            for col_idx in range(1, max_col + 1):
+                max_length = 0
+                col_letter = get_column_letter(col_idx)
+                for row_idx in range(1, max_row + 1):
+                    cell_value = ws.cell(row=row_idx, column=col_idx).value
+                    length = len(str(cell_value)) if cell_value is not None else 0
+                    if length > max_length:
+                        max_length = length
+                ws.column_dimensions[col_letter].width = max_length + 2
+
+                # Закрепляем первые три столбца
+            ws.freeze_panes = ws["D1"]
 
         output.seek(0)
 
