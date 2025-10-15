@@ -2,13 +2,13 @@ from fastapi import APIRouter, HTTPException, Depends, Query, status
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
+from openpyxl.styles import PatternFill, Border, Side
 
 from database.db_init import get_db, SyncSessionLocal
 from database.models import Project, Keyword, Position, Group, SearchEngineEnum, User, UserRole
@@ -305,9 +305,9 @@ async def delete_project(
 @router.post("/{project_id}/check")
 async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db)):
     try:
-        # project = await db.get(Project, project_id)
-        # if not project:
-        #     raise HTTPException(status_code=404, detail="Project not found")
+        project = await db.get(Project, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
 
         # Запускаем фоновую задачу через Celery
         run_main_task_one_project.delay(str(project_id))
@@ -320,7 +320,6 @@ async def run_position_check(project_id: UUID, db: AsyncSession = Depends(get_db
 
 
 # --- Экспорт в Excel ---
-
 
 @router.get("/{project_id}/positions/export")
 async def export_positions_excel(
@@ -453,3 +452,170 @@ async def client_view(
     except Exception as e:
         logging.error("Failed to get positions by client link: %s", e)
         raise HTTPException(status_code=500, detail="Failed to get positions by client link")
+
+
+# --- Выгрузка таблицы в Эксель с динамикой по позициям ---
+@router.get("/{project_id}/positions/export_pivot")
+async def export_positions_pivot_excel(
+        project_id: UUID,
+        start_date: date = Query(..., description="Начальная дата периода"),
+        end_date: date = Query(..., description="Конечная дата периода"),
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        if start_date > end_date:
+            raise HTTPException(status_code=400, detail="start_date не может быть больше end_date")
+
+        project_obj = await db.get(Project, project_id)
+        if not project_obj:
+            logging.error("Project not found")
+            raise HTTPException(status_code=404, detail="Проект не найден")
+
+        # Получаем все ключевые слова проекта через Group
+        stmt_keywords = (
+            select(Keyword)
+            .join(Keyword.group)
+            .where(Group.project_id == project_id)
+            .options(selectinload(Keyword.group))
+        )
+        result = await db.execute(stmt_keywords)
+        keywords = result.scalars().all()
+
+        if not keywords:
+            raise HTTPException(status_code=404, detail="Ключевые слова проекта не найдены")
+
+        # Получаем позиции за период
+        stmt_positions = (
+            select(Position)
+            .join(Position.keyword)
+            .join(Keyword.group)
+            .where(and_(
+                Group.project_id == project_id,
+                Position.checked_at >= datetime.combine(start_date, datetime.min.time()),
+                Position.checked_at <= datetime.combine(end_date, datetime.max.time())
+            ))
+            .options(selectinload(Position.keyword))
+        )
+        result_pos = await db.execute(stmt_positions)
+        positions = result_pos.scalars().all()
+
+        # Собираем все даты в списке
+        date_list = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_list.append(current_date)
+            current_date += timedelta(days=1)
+
+        # Словарь для быстрого доступа к позициям по (keyword_id, date)
+        pos_dict = {}
+        for pos in positions:
+            key = (pos.keyword.id, pos.checked_at.date())
+            pos_dict[key] = pos.position
+
+        rows = []
+        # Для каждого ключа и каждой даты добавляем строку с позицией или '--'
+        for kw in keywords:
+            proj = kw.group.project if kw.group else None
+            group = kw.group
+
+            for dt in date_list:
+                pos_value = pos_dict.get((kw.id, dt), "--")
+                rows.append({
+                    "Проект": proj.domain if proj else None,
+                    "Группа": group.title if group else None,
+                    "Ключевое слово": kw.keyword,
+                    "Дата": dt,
+                    "Позиция": pos_value
+                })
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            raise HTTPException(status_code=404, detail="Данные за указанный период не найдены")
+
+        pivot = df.pivot_table(
+            index=["Проект", "Группа", "Ключевое слово"],
+            columns="Дата",
+            values="Позиция",
+            aggfunc="first"
+        )
+
+        # Заполняем пропуски (на всякий случай)
+        pivot = pivot.fillna("--")
+        pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            pivot.to_excel(writer, sheet_name="Positions")
+
+            wb = writer.book
+            ws = writer.sheets["Positions"]
+
+            # Определение заливок цвета (ваш код)
+            green_fill = PatternFill(start_color="b7fbd5", end_color="b7fbd5", fill_type="solid")
+            yellow_fill = PatternFill(start_color="fef5c5", end_color="fef5c5", fill_type="solid")
+            blue_fill = PatternFill(start_color="b4d2ff", end_color="b4d2ff", fill_type="solid")
+            grey_fill = PatternFill(start_color="f6f5f8", end_color="f6f5f8", fill_type="solid")
+            white_fill = PatternFill(start_color="ffffff", end_color="ffffff", fill_type="solid")
+
+            start_row = 2
+            start_col = 4
+            max_row = ws.max_row
+            max_col = ws.max_column
+
+            # Функция для определения цвета заливки (ваш код)
+            def get_fill(position):
+                if position == "--":
+                    return white_fill
+                try:
+                    pos_val = int(position)
+                except:
+                    return white_fill
+                if 1 <= pos_val <= 3:
+                    return green_fill
+                elif 4 <= pos_val <= 5:
+                    return yellow_fill
+                elif 6 <= pos_val <= 10:
+                    return blue_fill
+                elif 11 <= pos_val <= 30:
+                    return grey_fill
+                else:
+                    return white_fill
+
+            # Заливка ячеек
+            for row in range(start_row, max_row + 1):
+                for col in range(start_col, max_col + 1):
+                    cell = ws.cell(row=row, column=col)
+                    cell.fill = get_fill(cell.value)
+
+            # Установка тонких границ для ВСЕХ ячеек таблицы, включая заголовок и первые 3 столбца
+            from openpyxl.styles import Border, Side
+
+            thin_border = Border(
+                left=Side(style='thin', color='000000'),
+                right=Side(style='thin', color='000000'),
+                top=Side(style='thin', color='000000'),
+                bottom=Side(style='thin', color='000000')
+            )
+
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = ws.cell(row=row, column=col)
+                    cell.border = thin_border
+
+        output.seek(0)
+
+        filename = f"positions_pivot_{project_id}_{start_date}_{end_date}.xlsx"
+        headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+
+        return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to export positions pivot excel: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to export positions pivot excel")
+

@@ -24,17 +24,17 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(),
         user = await get_user_by_username(db, form_data.username)
 
         # Временная логика: если логин admin и пользователь не найден — создаём его
-        # if form_data.username == "admin" and user is None:
-        #      admin_user = User(
-        #          username="admin",
-        #          hashed_password=hash_password("admin"),
-        #          role=UserRole.admin,
-        #          is_temporary_password=True
-        #      )
-        #      db.add(admin_user)
-        #      await db.commit()
-        #      await db.refresh(admin_user)
-        #      user = admin_user
+        if form_data.username == "admin" and user is None:
+             admin_user = User(
+                 username="admin",
+                 hashed_password=hash_password("admin"),
+                 role=UserRole.admin,
+                 is_temporary_password=True
+             )
+             db.add(admin_user)
+             await db.commit()
+             await db.refresh(admin_user)
+             user = admin_user
 
         if not user or not verify_password(form_data.password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
