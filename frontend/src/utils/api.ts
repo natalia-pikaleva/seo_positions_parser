@@ -392,13 +392,37 @@ export async function changePassword(token: string, data: { old_password: string
   return await response.json();
 }
 
-
+// Экспорт позиций в Эксель
 export async function exportPositionsExcel(
   projectId: string,
   startDate: string, // формат 'YYYY-MM-DD'
   endDate: string
 ): Promise<Blob> {
   const url = new URL(`${API_BASE}/projects/${projectId}/positions/export`);
+  url.searchParams.append('start_date', startDate);
+  url.searchParams.append('end_date', endDate);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ошибка при экспорте: ${response.statusText}`);
+  }
+
+  return await response.blob();
+}
+
+// Экспорт в Эксель таблицы динамики
+export async function exportPositionsPivotExcel(
+  projectId: string,
+  startDate: string, // формат 'YYYY-MM-DD'
+  endDate: string
+): Promise<Blob> {
+  const url = new URL(`${API_BASE}/projects/${projectId}/positions/export_pivot`);
   url.searchParams.append('start_date', startDate);
   url.searchParams.append('end_date', endDate);
 

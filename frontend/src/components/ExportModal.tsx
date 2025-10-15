@@ -9,15 +9,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onExport }) =
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  const handleExport = () => {
+
+
+  const validateDates = () => {
     if (!startDate || !endDate) {
       alert('Пожалуйста, выберите обе даты');
-      return;
+      return false;
     }
     if (startDate > endDate) {
       alert('Дата начала не может быть позже даты окончания');
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handleExport = () => {
+    if (!validateDates()) return;
     onExport(startDate, endDate);
   };
 
@@ -53,19 +60,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onExport }) =
             </button>
             <button
               type="button"
-              onClick={() => {
-			  if (!startDate || !endDate) {
-			    alert('Пожалуйста, выберите обе даты');
-			    return;
-			  }
-			  if (startDate > endDate) {
-			    alert('Дата начала не может быть позже даты окончания');
-			    return;
-			  }
-			  onExport(startDate, endDate);
-			}}>
-			  Экспортировать
-			</button>
+              onClick={handleExport}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Экспортировать
+            </button>
           </div>
         </div>
       </div>

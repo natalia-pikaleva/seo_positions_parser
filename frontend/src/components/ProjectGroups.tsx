@@ -4,7 +4,7 @@ import { Copy, Plus, Calendar, TrendingUp, RefreshCw } from 'lucide-react';
 
 import { API_BASE } from '../utils/config';
 import { ExportModal } from './ExportModal';
-import { exportPositionsExcel, runProjectParsing } from '../utils/api';
+import { exportPositionsExcel, runProjectParsing, exportPositionsPivotExcel } from '../utils/api';
 import { generateClientLink } from '../utils/positionUtils';
 
 interface ProjectGroupsProps {
@@ -25,6 +25,7 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
   isClientView = false,
 }) => {
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportFunction, setExportFunction] = useState<(startDate: string, endDate: string) => void>(() => () => {});
   const [isExporting, setIsExporting] = useState(false);
   // Локальное состояние групп
   const [groups, setGroups] = useState<Group[]>([]);
@@ -245,6 +246,31 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
     }
   };
 
+  const handleExportWithDynamics = async (startDate: string, endDate: string) => {
+      setIsExporting(true);
+      try {
+        // вызов вашей функции экспорта эксель с динамикой
+        const blob = await exportPositionsPivotExcel(project.id, startDate, endDate);
+
+        // скачивание файла с нужным именем
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `positions_${project.id}_${startDate}_${endDate}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        setIsExportOpen(false);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Ошибка при экспорте');
+      } finally {
+        setIsExporting(false);
+      }
+    };
+
+
   const copyClientLink = async () => {
 	    try {
 	      const fullLink = generateClientLink(project.clientLink);
@@ -296,22 +322,37 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
 			    </button>
 
 			    <button
-			      onClick={() => setIsExportOpen(true)}
-			      disabled={isExporting}
-			      className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-60 text-sm w-full md:w-auto md:text-base"
-			    >
-			      {isExporting ? (
-			        <>
-			          <RefreshCw className="w-5 h-5 animate-spin" />
-			          Экспортируем...
-			        </>
-			      ) : (
-			        <>
-			          <Calendar className="w-5 h-5" />
-			          Экспорт в Excel
-			        </>
-			      )}
-			    </button>
+                  onClick={() => {
+                    setExportFunction(() => handleExport);  // экспорт позиций
+                    setIsExportOpen(true);
+                  }}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-60 text-sm w-full md:w-auto md:text-base"
+                >
+                  {isExporting ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      Экспортируем...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="w-5 h-5" />
+                      Экспорт позиций в Excel
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setExportFunction(() => handleExportWithDynamics);  // экспорт с динамикой
+                    setIsExportOpen(true);
+                  }}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-60 text-sm w-full md:w-auto md:text-base"
+                >
+                  Экспорт с динамикой
+                </button>
+
 
 			    <button
 			      onClick={copyClientLink}
@@ -529,13 +570,14 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
       )}
 
        {/* Модальное окно выбора периода и запуска экспорта */}
-      {!isClientView && isExportOpen && (
-        <ExportModal
-          onClose={() => setIsExportOpen(false)}
-          onExport={handleExport}
-          isExporting={isExporting}
-        />
-      )}
+      {isExportOpen && (
+          <ExportModal
+            onClose={() => setIsExportOpen(false)}
+            onExport={exportFunction}
+          />
+        )}
+
+
     </div>
   );
 };
