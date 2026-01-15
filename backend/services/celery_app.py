@@ -21,11 +21,3 @@ celery_app.conf.beat_schedule = {
          "schedule": crontab(hour=11, minute='30,55'), 
      },
  }
-
-
-#celery_app.conf.beat_schedule = {
-#    "parse_positions_nightly": {
-#        "task": "services.topvizor_task.run_main_task",
-#        "schedule": crontab(minute='37, 40', hour='18'),
-#    },
-#}
