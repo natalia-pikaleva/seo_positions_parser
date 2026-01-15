@@ -48,10 +48,11 @@ def start_topvisor_position_check(topvisor_project_id: int):
 
 def get_positions_topvisor(project_id: int,
                            region_key: int,
-                           date: str,
+                           date_today: datetime,
                            searcher_key: int = 0,
                            max_retries: int = 5,
                            delay: int = 20):
+    date = date_today.strftime("%Y-%m-%d")
     url = "https://api.topvisor.com/v2/json/get/positions_2/history"
     headers = {
         "User-Id": TOPVIZOR_ID,
@@ -113,8 +114,9 @@ def find_position_from_topvisor_result(result: list, keyword: str, domain: str) 
 
 def process_single_keyword_position(session_db, position_data: list, frequency_map: dict,
                                     keyword: Keyword, domain: str,
-                                    project_id: int, region_index: int, date: str) -> bool:
+                                    project_id: int, region_index: int, date_today: datetime) -> bool:
     try:
+        date = date_today.strftime("%Y-%m-%d")
         logger.info(f"Обработка ключевого слова '{keyword.keyword}'")
         position = None
         frequency = None
@@ -162,13 +164,17 @@ def process_single_keyword_position(session_db, position_data: list, frequency_m
 
         if position is None or position > 10:
             cost = 0
+           
         elif 1 <= position <= 3:
             cost = keyword.price_top_1_3
+           
         elif 4 <= position <= 5:
             cost = keyword.price_top_4_5
+           
         else:
             cost = keyword.price_top_6_10
         logger.info(f"Рассчитанная стоимость для ключа '{keyword.keyword}': {cost}")
+
 
         if previous_position is None or position is None:
             trend = TrendEnum.stable
@@ -182,7 +188,7 @@ def process_single_keyword_position(session_db, position_data: list, frequency_m
 
         pos_record = Position(
             keyword_id=keyword.id,
-            checked_at=datetime.utcnow(),
+            checked_at=date_today,
             position=position,
             frequency=frequency,
             previous_position=previous_position,
@@ -199,8 +205,7 @@ def process_single_keyword_position(session_db, position_data: list, frequency_m
         raise
 
 
-def wait_for_positions(project_id, region_key, max_wait=900, interval=30):
-    date_today = datetime.utcnow().strftime("%Y-%m-%d")
+def wait_for_positions(project_id, region_key, date_today: datetime, max_wait=900, interval=30):
     start_time = datetime.utcnow()
 
     logger.info("Запрашиваем позиции")
@@ -224,7 +229,13 @@ def wait_for_positions(project_id, region_key, max_wait=900, interval=30):
 
 def main_task(project_ids: List[UUID], session_db):
     failed = []
-    date_today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Нужная дата
+    #date_today = datetime(2025, 11, 5, 0, 0, 0)
+
+    # Текущая дата
+    date_today = datetime.utcnow()
+
     groups_to_wait = []  # Список групп, для которых запущен процесс снятия позиций
 
     for project_id in project_ids:
@@ -276,6 +287,7 @@ def main_task(project_ids: List[UUID], session_db):
                 # Обрабатываем ключевые слова, записываем в БД
                 for kw in [k for k in group.keywords if k.is_check]:
                     try:
+                        # todo
                         process_single_keyword_position(session_db, positions, frequency_map, kw,
                                                         project.domain, group.topvisor_id, region_index, date_today)
                     except Exception as e:
@@ -298,7 +310,7 @@ def main_task(project_ids: List[UUID], session_db):
 
     # Второй этап: запрос позиций для групп, где был запущен процесс снятия
     for topvisor_id, region_index, project, group in groups_to_wait:
-        positions = wait_for_positions(topvisor_id, region_index, max_wait=900, interval=30)
+        positions = wait_for_positions(topvisor_id, region_index, date_today, max_wait=900, interval=30)
         if positions:
             volumes_data = get_keyword_volumes(topvisor_id, region_index, searcher_key=0, type_volume=1)
             frequency_map = {}
@@ -397,6 +409,8 @@ def run_main_task(self):
                 failed = [str(pid) for pid in project_ids]
             else:
                 logger.info("All projects processed successfully.")
+
+            success, error = main_task(project_ids, session_db)
 
             task_status.status = "completed"
             task_status.finished_at = datetime.utcnow()

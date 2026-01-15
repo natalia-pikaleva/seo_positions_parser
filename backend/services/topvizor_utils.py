@@ -346,7 +346,7 @@ def get_keyword_volumes(project_id: int, region_key: int, searcher_key: int, typ
 
     try:
         data = retry_request(url, payload, headers)
-        logger.debug(f"Данные частотности: {json.dumps(data, indent=2, ensure_ascii=False)}")
+        logger.info(f"Данные частотности: {json.dumps(data, indent=2, ensure_ascii=False)}")
         if "errors" in data:
             logger.error(f"Ошибка в ответе при запросе частотности: {data['errors']}")
             return None
