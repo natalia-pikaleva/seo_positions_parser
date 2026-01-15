@@ -62,6 +62,7 @@ class Group(Base):
     search_engine = Column(Enum(SearchEngineEnum), default=SearchEngineEnum.yandex, nullable=False)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
+    is_archived = Column(Boolean, default=False, nullable=False)
 
     project = relationship("Project", back_populates="groups")
     keywords = relationship("Keyword",

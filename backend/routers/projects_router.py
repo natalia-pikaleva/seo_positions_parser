@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_
+from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
@@ -298,6 +299,41 @@ async def delete_project(
     except Exception as e:
         logging.error(f"Failed to delete project: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete project")
+
+
+@router.post("/{project_id}/archive", response_model=ProjectOut)
+async def archive_project(
+        project_id: UUID,
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        # ЕДИНЫЙ запрос со ВСЕМИ связанными данными
+        result = await db.execute(
+            select(Project)
+            .options(
+                selectinload(Project.groups).selectinload(Group.keywords)
+            )
+            .where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Меняем статус архивации
+        for group in project.groups:
+            group.is_archived = True
+
+        await db.commit()
+        # Обновляем ТОЛЬКО группы (ключи уже загружены)
+        await db.refresh(project, ["groups"])
+
+        return project
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to archive project: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to archive project")
 
 
 # --- Запуск обновления позиций (парсер) ---
@@ -632,4 +668,3 @@ async def export_positions_pivot_excel(
     except Exception as e:
         logging.error(f"Failed to export positions pivot excel: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to export positions pivot excel")
-

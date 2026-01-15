@@ -73,6 +73,23 @@ export async function deleteProject(projectId: string, token: string): Promise<v
   // Если 204 No Content, возвращаем void
 }
 
+// Архивировать проект
+export async function archiveProject(projectId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!res.ok) {
+    let errorText = 'Failed to archive project';
+    try {
+      const errorJson = await res.json();
+      if (errorJson?.detail) errorText = errorJson.detail;
+    } catch {}
+    throw new Error(errorText);
+  }
+}
+
+
 export async function runProjectParsing(projectId: string): Promise<{message: string}> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/check`, {
     method: 'POST',
@@ -137,6 +154,18 @@ export async function updateGroup(
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to update group');
+  }
+  return res.json();
+}
+
+// Архивировать группу
+export async function archiveGroup(groupId: string): Promise<Group> {
+  const res = await fetch(`${API_BASE}/groups/${groupId}/archive`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to archive group');
   }
   return res.json();
 }
