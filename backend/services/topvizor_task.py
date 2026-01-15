@@ -237,7 +237,9 @@ def main_task(project_ids: List[UUID], session_db):
             continue
 
         for group in project.groups:
-            if not group.topvisor_id or not group.keywords:
+            if not group.topvisor_id or not group.keywords or not group.is_archived:
+                if not group.is_archived:
+                    logger.info(f"Group {group.id} is archived, skipping")
                 failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])
                 continue
 

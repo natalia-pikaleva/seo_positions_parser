@@ -51,6 +51,7 @@ export interface GroupBase {
   region: string;
   searchEngine: SearchEngineEnum;
   topvisorId?: number; // optional, может быть undefined
+  is_archived: boolean;
 }
 
 // Для создания группы (аналог GroupCreate)

@@ -69,6 +69,7 @@ class GroupBase(BaseModel):
     region: constr(min_length=1)
     search_engine: SearchEngineEnum = Field(SearchEngineEnum.yandex, alias="searchEngine")
     topvisor_id: Optional[int] = None
+    is_archived: bool
 
 
 class GroupCreate(GroupBase):
@@ -81,6 +82,7 @@ class GroupUpdate(BaseModel):
     search_engine: Optional[SearchEngineEnum] = Field(None, alias="searchEngine")
     topvisor_id: Optional[int] = None
     project_id: Optional[UUID] = None
+    is_archived: Optional[bool] = None
 
     class Config:
         allow_population_by_field_name = True

@@ -254,6 +254,38 @@ async def delete_group(group_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to delete group")
 
 
+@router.post("/{group_id}/archive", response_model=GroupOut)
+async def toggle_archive_group(
+        group_id: UUID,
+        db: AsyncSession = Depends(get_db)
+):
+    try:
+        # Загружаем группу с полным проектом
+        result = await db.execute(
+            select(Group)
+            .options(
+                selectinload(Group.project).selectinload(Project.groups).selectinload(Group.keywords)
+            )
+            .where(Group.id == group_id)
+        )
+        group = result.scalar_one_or_none()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # ✅ Toggle: переключаем статус архива
+        group.is_archived = not group.is_archived
+        await db.commit()
+        await db.refresh(group)
+
+        return group
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Ошибка при переключении архива группы: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to toggle group archive")
+
+
 @router.get("/{group_id}", response_model=GroupOut)
 async def get_group(
         group_id: UUID,
