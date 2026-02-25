@@ -69,7 +69,7 @@ class GroupBase(BaseModel):
     region: constr(min_length=1)
     search_engine: SearchEngineEnum = Field(SearchEngineEnum.yandex, alias="searchEngine")
     topvisor_id: Optional[int] = None
-    is_archived: bool
+    is_archived: Optional[bool] = False
 
 
 class GroupCreate(GroupBase):
