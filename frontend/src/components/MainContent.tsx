@@ -1,9 +1,9 @@
 import React from 'react';
 
 import { Dashboard } from './Dashboard';
-import { ProjectForm } from './ProjectForm';
-import { ProjectGroups } from './ProjectGroups';
-import { PositionTable } from './PositionTable';
+import { ProjectForm } from './Projects/ProjectForm';
+import { ProjectGroups } from './Projects/ProjectGroups';
+import { PositionTable } from './Positions/PositionTable';
 
 import { Project, Group } from '../types';
 

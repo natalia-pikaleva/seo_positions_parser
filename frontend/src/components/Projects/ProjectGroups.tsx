@@ -1,11 +1,11 @@
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
-import { Group, GroupCreate, GroupUpdate, Project } from '../types';
+import { Group, GroupCreate, GroupUpdate, Project } from '../../types';
 import { Copy, Plus, Calendar, TrendingUp, RefreshCw } from 'lucide-react';
 
-import { API_BASE } from '../utils/config';
-import { ExportModal } from './ExportModal';
-import { exportPositionsExcel, runProjectParsing, exportPositionsPivotExcel, archiveProject } from '../utils/api';
-import { generateClientLink } from '../utils/positionUtils';
+import { API_BASE } from '../../utils/config';
+import { ExportModal } from '../ExportModal';
+import { exportPositionsExcel, runProjectParsing, exportPositionsPivotExcel, archiveProject } from '../../utils/api';
+import { generateClientLink } from '../../utils/positionUtils';
 
 interface ProjectGroupsProps {
     project: Project;
@@ -239,7 +239,18 @@ export const ProjectGroups: React.FC<ProjectGroupsProps> = ({
 
             setIsExportOpen(false);
         } catch (error) {
-            alert(error instanceof Error ? error.message : 'Ошибка при экспорте');
+            try {
+                // Пытаемся распарсить тело ошибки как JSON
+                const errorResponse = await error.json();
+                if (error.status === 404 && errorResponse.detail) {
+                    alert(errorResponse.detail); // «Данные за указанный период не найдены»
+                } else {
+                    alert('Ошибка при экспорте');
+                }
+            } catch (parseError) {
+                // Если распарсить не удалось — показываем общее сообщение
+                alert('Позиции за указанный период не найдены');
+            }
         } finally {
             setIsExporting(false);
         }

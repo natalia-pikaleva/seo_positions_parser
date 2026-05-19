@@ -9,8 +9,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onExport }) =
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-
-
   const validateDates = () => {
     if (!startDate || !endDate) {
       alert('Пожалуйста, выберите обе даты');

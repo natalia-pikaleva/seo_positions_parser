@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, TrendingUp, Minus, Copy, Calendar, Star, Edit2 } from 'lucide-react';
 
-import { Group, FilterOptions, Position, Project } from '../types';
+import { Group, FilterOptions, Position, Project } from '../../types';
 import {
     fetchPositions,
     fetchPositionsIntervals,
@@ -13,15 +13,13 @@ import {
     uploadKeywordsFile,
     updateKeywordsFromFile,
     archiveGroup
-} from '../utils/api';
-import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
+} from '../../utils/api';
+import { getPositionColor, getTrendIcon, getTrendColor } from '../../utils/positionUtils';
 import { KeywordManager } from './KeywordManager';
-import { EditGroupMenu } from './EditGroupMenu';
+import { EditGroupMenu } from '../Projects/EditGroupMenu';
 
 // Импортируем выделенные компоненты
 import { PositionFilters } from './PositionFilters';
-import { PositionStats } from './PositionStats';
-import { PositionTableView } from './PositionTableView';
 import { ExcelLikeTableView } from './ExcelLikeTableView'
 
 interface PositionTableProps {
