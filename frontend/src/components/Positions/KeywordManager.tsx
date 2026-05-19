@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Keyword, KeywordUpdate, Group } from '../types';
-import { enableKeywordCheck, disableKeywordCheck } from '../utils/api';
+import { Keyword, KeywordUpdate, Group } from '../../types';
+import { enableKeywordCheck, disableKeywordCheck } from '../../utils/api';
 
 interface KeywordManagerProps {
   keywords: Keyword[];

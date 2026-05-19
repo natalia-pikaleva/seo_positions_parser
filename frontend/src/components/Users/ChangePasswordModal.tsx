@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { changePassword } from '../utils/api';
+import { changePassword } from '../../utils/api';
 
 interface ChangePasswordModalProps {
   token: string;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { resetTemporaryPassword } from '../utils/api';
+import { resetTemporaryPassword } from '../../utils/api';
 
 interface Project {
   id: string;

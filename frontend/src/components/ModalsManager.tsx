@@ -1,6 +1,6 @@
 import React from 'react';
-import { RegisterManagerModal } from './RegisterManagerModal';
-import { ChangePasswordModal } from './ChangePasswordModal';
+import { RegisterManagerModal } from './Users/RegisterManagerModal';
+import { ChangePasswordModal } from './Users/ChangePasswordModal';
 
 interface ModalsManagerProps {
   isRegisterOpen: boolean;

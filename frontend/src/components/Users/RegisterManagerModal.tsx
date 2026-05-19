@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { registerManager } from '../utils/api';
+import { registerManager } from '../../utils/api';
 
 interface RegisterManagerModalProps {
   onClose: () => void;

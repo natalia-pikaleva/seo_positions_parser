@@ -4,9 +4,8 @@ import { Project, FilterOptions, Position } from '../types';
 import { getPositionColor, getTrendIcon, getTrendColor } from '../utils/positionUtils';
 import { fetchPositions, fetchPositionsIntervals } from '../utils/api';
 import logo  from '../assets/logo.png';
-import { PositionTableView } from './PositionTableView';
-import { PositionStats } from './PositionStats';
-import { ExcelLikeTableView } from './ExcelLikeTableView'
+import { PositionStats } from './Positions/PositionStats';
+import { ExcelLikeTableView } from './Positions/ExcelLikeTableView'
 
 interface ClientViewProps {
   project: Project;
@@ -520,19 +519,6 @@ const extendedDateGroups = sortedIntervals.map((group, idx, arr) => {
 			</div>
 	      </div>
 
-
-          {/* Таблица позиций */}
-          {/*<PositionTableView
-          editableProject={editableProject}
-          filteredKeywords={filteredKeywords}
-          positionsMap={positionsMap}
-          dates={dates}
-          headerDates={headerDates}
-          dateGroups={extendedDateGroups}
-          filterPeriod={filter.period}
-          intervalSums={intervalSums}
-          formatDateKey={formatDateKey}
-        />*/}
 
           {/* Таблица данных в виде Эксель */}
           <ExcelLikeTableView

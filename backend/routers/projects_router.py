@@ -3,13 +3,12 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_
-from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
 from datetime import datetime, timedelta, date
 import logging
-from openpyxl.styles import PatternFill, Border, Side
+from openpyxl.styles import PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 from database.db_init import get_db, SyncSessionLocal
@@ -385,7 +384,7 @@ async def export_positions_excel(
             .options(
                 selectinload(Position.keyword).selectinload(Keyword.group).selectinload(Group.project)
             )
-            .order_by(Position.checked_at)
+            .order_by(Position.checked_at.desc())
         )
 
         result = await db.execute(stmt)
@@ -395,8 +394,17 @@ async def export_positions_excel(
             logging.error("Positions not found")
             raise HTTPException(status_code=404, detail="Данные за указанный период не найдены")
 
-        data = []
+        cleaned_positions_dict = dict()
         for pos in positions:
+            key = (pos.keyword_id, pos.checked_at.date())
+            if key not in cleaned_positions_dict or pos.checked_at > cleaned_positions_dict[key].checked_at:
+                cleaned_positions_dict[key] = pos
+
+        cleaned_positions = list(cleaned_positions_dict.values())
+        cleaned_positions.sort(key=lambda x: x.checked_at)
+
+        data = []
+        for pos in cleaned_positions:
             project = pos.keyword.group.project
             group = pos.keyword.group
             keyword = pos.keyword
@@ -415,10 +423,47 @@ async def export_positions_excel(
             })
 
         df = pd.DataFrame(data)
+        total_cost = df['Стоимость'].sum()
+        summary_row = pd.DataFrame([{
+            "Проект": "Итого",
+            "Поисковая система": "",
+            "Группа": "",
+            "Ключевое слово": "",
+            "Город": "",
+            "Дата": "",
+            "Позиция": "",
+            "Частотность": "",
+            "Динамика": "",
+            "Тренд": "",
+            "Стоимость": total_cost
+        }])
+
+        df_with_summary = pd.concat([df, summary_row], ignore_index=True)
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name="Positions")
+            # Записываем DataFrame без заголовков (они добавятся отдельно)
+            df_with_summary.to_excel(writer, index=False, sheet_name="Positions", startrow=0, startcol=0)
+
+            # Получаем лист для работы с форматированием
+            worksheet = writer.sheets["Positions"]
+
+            # Определяем номер строки с итогами (последняя строка)
+            summary_row_idx = len(
+                df_with_summary) + 1  # +1 потому что в Excel нумерация с 1, а у нас есть строка заголовков
+
+            # В openpyxl строки начинаются с 1, первая строка — заголовки, данные с 2-й, итоги — на len(df)+2
+            summary_row_num = len(df) + 2
+
+            # Создаём стили
+            bold_font = Font(bold=True)
+            gray_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
+
+            # Применяем стили ко всем ячейкам в строке итогов
+            for col_idx in range(1, len(df_with_summary.columns) + 1):  # колонки с 1 до N
+                cell = worksheet.cell(row=summary_row_num, column=col_idx)
+                cell.font = bold_font
+                cell.fill = gray_fill
 
         output.seek(0)
 
@@ -522,6 +567,7 @@ async def export_positions_pivot_excel(
             raise HTTPException(status_code=404, detail="Ключевые слова проекта не найдены")
 
         # Получаем позиции за период
+        # Получаем позиции за период (с сортировкой по checked_at DESC)
         stmt_positions = (
             select(Position)
             .join(Position.keyword)
@@ -532,9 +578,17 @@ async def export_positions_pivot_excel(
                 Position.checked_at <= datetime.combine(end_date, datetime.max.time())
             ))
             .options(selectinload(Position.keyword))
+            .order_by(Position.checked_at.desc())  # сортировка по убыванию времени
         )
         result_pos = await db.execute(stmt_positions)
         positions = result_pos.scalars().all()
+
+        # Словарь для быстрого доступа к позициям по (keyword_id, date)
+        pos_dict = {}
+        for pos in positions:
+            key = (pos.keyword.id, pos.checked_at.date())
+            if key not in pos_dict:  # берём только первую (самую позднюю) запись
+                pos_dict[key] = pos.position
 
         # Собираем все даты в списке
         date_list = []
@@ -542,12 +596,6 @@ async def export_positions_pivot_excel(
         while current_date <= end_date:
             date_list.append(current_date)
             current_date += timedelta(days=1)
-
-        # Словарь для быстрого доступа к позициям по (keyword_id, date)
-        pos_dict = {}
-        for pos in positions:
-            key = (pos.keyword.id, pos.checked_at.date())
-            pos_dict[key] = pos.position
 
         rows = []
         # Для каждого ключа и каждой даты добавляем строку с позицией или '--'
@@ -587,7 +635,7 @@ async def export_positions_pivot_excel(
             wb = writer.book
             ws = writer.sheets["Positions"]
 
-            # Определение заливок цвета (ваш код)
+            # Определение заливок цвета
             green_fill = PatternFill(start_color="b7fbd5", end_color="b7fbd5", fill_type="solid")
             yellow_fill = PatternFill(start_color="fef5c5", end_color="fef5c5", fill_type="solid")
             blue_fill = PatternFill(start_color="b4d2ff", end_color="b4d2ff", fill_type="solid")
@@ -599,7 +647,7 @@ async def export_positions_pivot_excel(
             max_row = ws.max_row
             max_col = ws.max_column
 
-            # Функция для определения цвета заливки (ваш код)
+            # Функция для определения цвета заливки
             def get_fill(position):
                 if position == "--":
                     return white_fill
