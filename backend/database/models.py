@@ -84,6 +84,7 @@ class Project(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     client_link = Column(String, unique=True, nullable=False)
     topvisor_id = Column(BigInteger, unique=True, nullable=True)  # Topvisor ID
+    owner = Column(String, nullable=False)
 
     groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
     users = relationship(
