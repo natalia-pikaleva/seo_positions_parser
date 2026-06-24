@@ -315,11 +315,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             <div className="text-xs text-gray-500">
                                                 {new Date(project.createdAt).toLocaleDateString('ru-RU')}
                                             </div>
-                                            {isLKSeoKorenev && (
-                                                <div className="flex items-center gap-1 px-2 py-1 bg-orange-200 text-xs text-orange-700 rounded-full">
-                                                    lk-seo.korenev.pro
-                                                </div>
-                                            )}
                                             <div className="flex items-center gap-1 px-2 py-1 bg-orange-200 text-xs text-orange-700 rounded-full">
                                                 {project.owner}
                                             </div>
