@@ -266,6 +266,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 // Проверяем, все ли группы проекта заархивированы
                                 const allGroupsArchived = project.groups.every(group => group.is_archived);
                                 const isLKSeoKorenev = project.owner === "lk_seo_korenev"
+                                console.log("project.owner", project.owner, "isLKSeoKorenev", isLKSeoKorenev)
 
                                 return (
                                     <div
