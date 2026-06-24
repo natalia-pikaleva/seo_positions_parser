@@ -162,6 +162,7 @@ class ProjectOut(ProjectBase):
     created_at: datetime = Field(..., alias="createdAt")
     client_link: str = Field(..., alias="clientLink")
     groups: Optional[List[GroupOut]] = None
+    owner: str = 're-spond'
 
     model_config = ConfigDict(
         from_attributes=True,

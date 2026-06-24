@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, HTTPException, status
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
+from sqlalchemy.future import select
 import io
 import pandas as pd
 from datetime import datetime, timedelta, date
@@ -32,6 +33,7 @@ from services.topvizor_utils import (create_project_in_topvisor,
                                      get_region_key_index_static,
                                      add_searcher_to_project,
                                      add_searcher_region)
+from services.lk_seo_data import get_lk_seo_korenev_projects
 
 import aiohttp
 import os
@@ -46,11 +48,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# --- Проекты ---
 
-from fastapi import Depends, HTTPException, status
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+# --- Проекты ---
 
 
 @router.get("/", response_model=List[ProjectOut])
@@ -65,8 +64,25 @@ async def get_projects(
             result = await db.execute(
                 select(Project).options(selectinload(Project.groups))
             )
-            projects = result.scalars().all()
-            return projects
+            results = result.scalars().all()
+
+            # Добавляем проекты сервиса lk-seo.korenev.pro
+            try:
+                lk_seo_korenev_projects = await get_lk_seo_korenev_projects()
+
+                all_projects = [
+                    ProjectOut.model_validate(project, from_attributes=True)
+                    for project in results
+                ]
+
+                if lk_seo_korenev_projects:
+                    all_projects.extend(lk_seo_korenev_projects)
+                return all_projects
+            except Exception as ex:
+                logger.exception("Ошибка при получении проектов сервиса lk-seo.korenev.pro %s", ex)
+                # ВАЖНО: Даже при ошибке нужно вернуть валидные схемы, а не ORM объекты!
+                # Если lk-сервис упал, возвращаем только локальные проекты, но правильно сериализованные
+                return [ProjectOut.model_validate(p, from_attributes=True) for p in results]
 
         elif current_user.role == UserRole.manager:
             # Менеджер видит только свои проекты
