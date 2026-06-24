@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { BarChart, Users, TrendingUp, Calendar, Plus, RefreshCw } from 'lucide-react';
 import { Project, Group } from '../types';
 import { API_BASE } from '../utils/config';
-import { ProjectGroups } from './ProjectGroups'; // Ваш компонент групп проекта
-import PositionTable from './PositionTable';
+import { ProjectGroups } from './Projects/ProjectGroups'; // Ваш компонент групп проекта
+import PositionTable from './Positions/PositionTable';
 import { fetchProject } from '../utils/api';
 
 interface DashboardProps {
@@ -30,6 +30,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+
+    const [activeTab, setActiveTab] = useState('main');
 
     // Статистика
     const totalKeywords = projects.reduce(
@@ -242,8 +244,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Список проектов */}
             <div className="bg-white rounded-lg shadow-lg">
-                <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-semibold text-gray-900">Проекты</h2>
+
+                {/* Вкладки */}
+                <div className="mb-8">
+                    <div className="flex justify-start">
+                        <div className="backdrop-blur-sm p-2 rounded-2xl border border-purple-500/20">
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={() => {
+                                        setActiveTab('main');
+                                    }}
+                                    className={`px-8 py-3 rounded-xl transition-all duration-300 ${activeTab === 'main'
+                                        ? 'shadow-lg shadow-gray-500/25 text-white bg-orange-600 text-bold'
+                                        : 'hover:text-white hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    Проекты
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setActiveTab('other');
+                                    }}
+                                    className={`px-8 py-3 rounded-xl transition-all duration-300 ${activeTab === 'other'
+                                        ? 'shadow-lg shadow-gray-500/25 text-white bg-orange-600 text-bold'
+                                        : 'hover:text-white hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    Проекты maksfin
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div className="p-2 md:p-6">
                     {projects.length === 0 ? (
@@ -272,8 +303,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     <div
                                         key={project.id}
                                         className={`border rounded-lg p-4 hover:shadow-md transition-all cursor-pointer ${allGroupsArchived
-                                                ? 'border-gray-300 bg-gray-50 shadow-sm'  // Архивный стиль
-                                                : 'border-gray-200 hover:shadow-md'        // Обычный стиль
+                                            ? 'border-gray-300 bg-gray-50 shadow-sm'  // Архивный стиль
+                                            : 'border-gray-200 hover:shadow-md'        // Обычный стиль
                                             }`}
                                         onClick={() => handleSelectProject(project)}
                                     >
@@ -304,8 +335,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                     }
                                                 }}
                                                 className={`text-sm font-semibold ${allGroupsArchived
-                                                        ? 'text-gray-500 hover:text-gray-700'
-                                                        : 'text-red-600 hover:text-red-800'
+                                                    ? 'text-gray-500 hover:text-gray-700'
+                                                    : 'text-red-600 hover:text-red-800'
                                                     }`}
                                                 type="button"
                                                 aria-label={`Удалить проект ${project.domain}`}
@@ -330,6 +361,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                     )}
                 </div>
+                </div>
+            )}
+
+                {/*}{activeTab === 'houses' && (
+                <div role="tabpanel" id="tabpanel-houses" aria-labelledby="tab-houses">
+                    <NatalChartHouseCards
+                        houses={houses}
+                        testAccess={testAccess}
+                        setTestAccess={setTestAccess}
+                        handleAccessGranted={handleAccessGranted}
+                        showPaymentModal={showPaymentModal}
+                        setShowPaymentModal={setShowPaymentModal}
+                        pageUrl={pageUrl}
+                        showFeedbackForm={showFeedbackForm}
+                        setShowFeedbackForm={setShowFeedbackForm}
+                        selectedFormat={selectedFormat}
+                        setSelectedFormat={setSelectedFormat}
+                        showLoginAlert={showLoginAlert}
+                        setShowLoginAlert={setShowLoginAlert}
+                        setShowDetails={setShowDetails}
+                    />
+                </div>
+            )}*/}
+
+
             </div>
 
             {/* Модальное окно статуса задачи */}

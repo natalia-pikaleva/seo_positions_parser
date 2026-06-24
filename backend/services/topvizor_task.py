@@ -186,6 +186,26 @@ def process_single_keyword_position(session_db, position_data: list, frequency_m
             trend = TrendEnum.stable
         logger.info(f"Тренд для ключа '{keyword.keyword}': {trend}")
 
+        start_of_day = datetime.combine(date_today, datetime.min.time())
+        end_of_day = datetime.combine(date_today, datetime.max.time())
+
+        pos_record = session_db.query(Position).filter(
+            Position.keyword_id == keyword.id,
+            Position.checked_at >= start_of_day,
+            Position.checked_at <= end_of_day
+        ).first()
+
+        if pos_record is not None:
+            pos_record.position = position
+            pos_record.frequency = frequency
+            pos_record.previous_position = previous_position
+            pos_record.cost = cost
+            pos_record.trend = trend
+
+            logger.info(
+                f"Позиция для ключевого слова '{keyword.keyword}' обновлена с позицией: {position} и частотностью: {frequency}")
+            return True
+
         pos_record = Position(
             keyword_id=keyword.id,
             checked_at=date_today,
@@ -248,7 +268,7 @@ def main_task(project_ids: List[UUID], session_db):
             continue
 
         for group in project.groups:
-            if not group.topvisor_id or not group.keywords or  group.is_archived:
+            if not group.topvisor_id or not group.keywords or group.is_archived:
                 if group.is_archived:
                     logger.info(f"Group {group.id} is archived, skipping")
                 failed.extend([(project.id, kw.id) for kw in group.keywords if kw.is_check])

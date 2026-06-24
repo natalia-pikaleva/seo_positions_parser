@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
 import { Header } from './components/Header';
-import { AuthGate } from './components/AuthGate';
+import { AuthGate } from './components/Users/AuthGate';
 import { MainContent } from './components/MainContent';
 import { ModalsManager } from './components/ModalsManager';
-import { EmployeesModal } from './components/EmployeesModal';
-import { EditUserModal } from './components/EditUserModal';
+import { EmployeesModal } from './components/Users/EmployeesModal';
+import { EditUserModal } from './components/Users/EditUserModal';
 import { CopyTextModal } from './components/CopyTextModal';
 
 import { Project, Group } from './types';
