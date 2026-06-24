@@ -82,6 +82,7 @@ export interface Project {
   createdAt: string;
   clientLink: string;
   groups: Group[];
+  owner: string;
 }
 
 interface UserOut {
