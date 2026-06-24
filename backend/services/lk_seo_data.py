@@ -38,7 +38,7 @@ async def get_lk_seo_korenev_projects():
                 for proj_dict in results:
                     proj_dict["owner"] = "lk_seo_korenev"
                     lk_projects_processed.append(ProjectOut(**proj_dict))
-                return {"projects": lk_projects_processed}
+                return lk_projects_processed
     except Exception as e:
         logger.error("Ошибка при получении проектов сервиса  lk-seo.korenev.pro %s", e)
         return None
