@@ -355,6 +355,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                     lk-seo.korenev.pro
                                                 </div>
                                             )}
+                                            <div className="flex items-center gap-1 px-2 py-1 bg-orange-200 text-xs text-orange-700 rounded-full">
+                                                {project.owner}
+                                            </div>
                                         </div>
 
                                     </div>
