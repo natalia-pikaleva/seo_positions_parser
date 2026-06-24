@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_
 from fastapi.responses import StreamingResponse
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+
 import io
 import pandas as pd
 from datetime import datetime, timedelta, date

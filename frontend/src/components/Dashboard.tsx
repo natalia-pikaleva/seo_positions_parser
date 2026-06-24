@@ -246,7 +246,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="bg-white rounded-lg shadow-lg">
 
                 {/* Вкладки */}
-                <div className="mb-8">
+                {/*}<div className="mb-8">
                     <div className="flex justify-start">
                         <div className="backdrop-blur-sm p-2 rounded-2xl border border-purple-500/20">
                             <div className="flex space-x-2">
@@ -275,7 +275,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                         </div>
                     </div>
-                </div>
+                </div>*/}
                 <div className="p-2 md:p-6">
                     {projects.length === 0 ? (
                         <div className="text-center py-12">
@@ -319,7 +319,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                 {project.groups.reduce((sum, group) => sum + group.keywords.length, 0)} запросов
                                             </span>
                                             <div className="flex flex-col md:flex-row justify-end items-center gap-2 md:gap-4">
-                                            {allGroupsArchived && (
+                                                {allGroupsArchived && (
                                                     <div className="flex items-center gap-1 px-2 py-1 bg-gray-200 text-xs text-gray-700 rounded-full">
                                                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -327,22 +327,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                         Архив
                                                     </div>
                                                 )}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (window.confirm(`Вы уверены, что хотите удалить проект "${project.domain}"? После удаления восстановление данных проекта будет невозможно!`)) {
-                                                        onDeleteProject(project.id);
-                                                    }
-                                                }}
-                                                className={`text-sm font-semibold ${allGroupsArchived
-                                                    ? 'text-gray-500 hover:text-gray-700'
-                                                    : 'text-red-600 hover:text-red-800'
-                                                    }`}
-                                                type="button"
-                                                aria-label={`Удалить проект ${project.domain}`}
-                                            >
-                                                Удалить
-                                            </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (window.confirm(`Вы уверены, что хотите удалить проект "${project.domain}"? После удаления восстановление данных проекта будет невозможно!`)) {
+                                                            onDeleteProject(project.id);
+                                                        }
+                                                    }}
+                                                    className={`text-sm font-semibold ${allGroupsArchived
+                                                        ? 'text-gray-500 hover:text-gray-700'
+                                                        : 'text-red-600 hover:text-red-800'
+                                                        }`}
+                                                    type="button"
+                                                    aria-label={`Удалить проект ${project.domain}`}
+                                                >
+                                                    Удалить
+                                                </button>
                                             </div>
                                         </div>
                                         <div className="mt-3 flex items-center justify-between gap-2 md:gap-4">
@@ -360,31 +360,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                     )}
                 </div>
-                </div>
-            )}
-
-                {/*}{activeTab === 'houses' && (
-                <div role="tabpanel" id="tabpanel-houses" aria-labelledby="tab-houses">
-                    <NatalChartHouseCards
-                        houses={houses}
-                        testAccess={testAccess}
-                        setTestAccess={setTestAccess}
-                        handleAccessGranted={handleAccessGranted}
-                        showPaymentModal={showPaymentModal}
-                        setShowPaymentModal={setShowPaymentModal}
-                        pageUrl={pageUrl}
-                        showFeedbackForm={showFeedbackForm}
-                        setShowFeedbackForm={setShowFeedbackForm}
-                        selectedFormat={selectedFormat}
-                        setSelectedFormat={setSelectedFormat}
-                        showLoginAlert={showLoginAlert}
-                        setShowLoginAlert={setShowLoginAlert}
-                        setShowDetails={setShowDetails}
-                    />
-                </div>
-            )}*/}
-
-
             </div>
 
             {/* Модальное окно статуса задачи */}
@@ -459,7 +434,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         )}
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 };
