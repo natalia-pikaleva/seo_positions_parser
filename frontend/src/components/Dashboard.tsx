@@ -125,7 +125,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     // Если выбрана группа
     if (selectedGroup && selectedProject) {
         return (
-            <div className="p-6 max-w-7xl mx-auto">
+            <div className="p-2 md:p-6 max-w-7xl mx-auto">
                 <button
                     onClick={handleBackToGroups}
                     className="mb-4 text-blue-600 hover:text-blue-800 font-medium"
@@ -178,7 +178,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     // Основной дашборд проектов
     return (
-        <div className="space-y-6 max-w-7xl mx-auto p-6">
+        <div className="space-y-6 max-w-7xl mx-auto p-2 md:p-6">
 
             {/* Заголовок и кнопки */}
             <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4 mb-8">
@@ -208,7 +208,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Статистика */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
-                <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+                <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center gap-3">
                     <div className="p-2 bg-blue-100 rounded-lg">
                         <BarChart className="w-6 h-6 text-blue-600" />
                     </div>
@@ -218,7 +218,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+                <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center gap-3">
                     <div className="p-2 bg-green-100 rounded-lg">
                         <TrendingUp className="w-6 h-6 text-green-600" />
                     </div>
@@ -229,7 +229,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
 
-                <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+                <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center gap-3">
                     <div className="p-2 bg-purple-100 rounded-lg">
                         <Calendar className="w-6 h-6 text-purple-600" />
                     </div>
@@ -245,7 +245,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="p-6 border-b border-gray-200">
                     <h2 className="text-xl font-semibold text-gray-900">Проекты</h2>
                 </div>
-                <div className="p-6">
+                <div className="p-2 md:p-6">
                     {projects.length === 0 ? (
                         <div className="text-center py-12">
                             <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -277,10 +277,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             }`}
                                         onClick={() => handleSelectProject(project)}
                                     >
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="text-lg font-semibold text-gray-900">{project.domain}</h3>
-                                                {allGroupsArchived && (
+                                        <div className="flex items-center justify-between mb-3 overflow-hidden">
+                                            <div className="flex items-center gap-2 max-w-full">
+                                                <h3 className="text-base md:text-lg font-semibold text-gray-900">{project.domain}</h3>
+                                            </div>
+
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm text-gray-600">
+                                            <span>
+                                                {project.groups.reduce((sum, group) => sum + group.keywords.length, 0)} запросов
+                                            </span>
+                                            <div className="flex flex-col md:flex-row justify-end items-center gap-2 md:gap-4">
+                                            {allGroupsArchived && (
                                                     <div className="flex items-center gap-1 px-2 py-1 bg-gray-200 text-xs text-gray-700 rounded-full">
                                                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -288,7 +296,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                         Архив
                                                     </div>
                                                 )}
-                                            </div>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -305,13 +312,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             >
                                                 Удалить
                                             </button>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center justify-between text-sm text-gray-600">
-                                            <span>
-                                                {project.groups.reduce((sum, group) => sum + group.keywords.length, 0)} запросов
-                                            </span>
-                                        </div>
-                                        <div className="mt-3 flex items-center justify-between">
+                                        <div className="mt-3 flex items-center justify-between gap-2 md:gap-4">
                                             <div className="text-xs text-gray-500">
                                                 {new Date(project.createdAt).toLocaleDateString('ru-RU')}
                                             </div>
