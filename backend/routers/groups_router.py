@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta, date
-import logging
 from io import BytesIO
 import pandas as pd
 import logging
@@ -27,7 +26,7 @@ from services.topvizor_utils import (create_project_in_topvisor,
                                      get_region_key_index_static,
                                      add_searcher_to_project,
                                      add_searcher_region)
-
+from services.lk_seo_data import get_positions_lk_seo_korenev, get_positions_intervals_lk_seo_korenev
 import aiohttp
 import os
 from dotenv import load_dotenv
@@ -663,13 +662,23 @@ async def delete_keyword(
 
 # --- Получение позиций с фильтром по периоду ---
 
-@router.get("/{group_id}/positions", response_model=List[PositionOut])
+@router.get("/{group_id}/positions")  # , response_model=List[PositionOut])
 async def get_positions(
         group_id: UUID,
         period: Optional[str] = Query("week", regex="^(week|month|custom)$"),
         offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
+        owner: str = Query("re-spond"),
         db: AsyncSession = Depends(get_db)
 ):
+    if owner != "re-spond":
+        # Запрашиваем позиции в сервисе lk-seo.korenev.pro
+        try:
+            positions = await get_positions_lk_seo_korenev(group_id, period, offset)
+            return positions
+        except Exception as ex:
+            logger.exception("Ошибка при запросе позиций сервиса lk-seo.korenev.pro % s", ex)
+            return []
+
     try:
         now = datetime.utcnow()
 
@@ -717,13 +726,22 @@ async def get_positions(
         raise HTTPException(status_code=500, detail="Failed to get positions by period")
 
 
-@router.get("/{group_id}/positions/intervals", response_model=List[KeywordIntervals])
+@router.get("/{group_id}/positions/intervals") #, response_model=List[KeywordIntervals])
 async def get_positions_intervals(
         group_id: UUID,
         period: str = Query("month", regex="^(week|month|custom)$"),
         offset: int = Query(0, description="Сдвиг периода: 0 — текущий, -1 — предыдущий и т.д."),
+        owner: str = Query("re-spond"),
         db: AsyncSession = Depends(get_db)
 ):
+    if owner != "re-spond":
+        # Запрашиваем позиции в сервисе lk-seo.korenev.pro
+        try:
+            positions = await get_positions_intervals_lk_seo_korenev(group_id, period, offset)
+            return positions
+        except Exception as ex:
+            logger.exception("Ошибка при запросе позиций по интервалам сервиса lk-seo.korenev.pro % s", ex)
+            return []
     try:
         current_utc_date = datetime.utcnow().date()
 

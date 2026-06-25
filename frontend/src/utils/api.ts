@@ -290,10 +290,11 @@ export async function runPositionCheck(projectId: string): Promise<{ message: st
   return res.json();
 }
 
-export async function fetchPositions(groupId: string, period: string, offset: number = 0): Promise<Position[]> {
+export async function fetchPositions(groupId: string, period: string, offset: number = 0, owner: string): Promise<Position[]> {
   const params = new URLSearchParams();
   params.append('period', period);
   params.append('offset', offset.toString());
+  params.append('owner', owner);
 
   const response = await fetch(`${API_BASE}/groups/${groupId}/positions?${params.toString()}`);
   if (!response.ok) {
@@ -318,11 +319,13 @@ interface KeywordIntervals {
 export async function fetchPositionsIntervals(
   groupId: string,
   period: string,
-  offset: number = 0
+  offset: number = 0,
+  owner: string
 ): Promise<KeywordIntervals[]> {
   const params = new URLSearchParams();
   params.append('period', period);
   params.append('offset', offset.toString());
+  params.append('owner', owner)
 
   const response = await fetch(`${API_BASE}/groups/${groupId}/positions/intervals?${params.toString()}`);
   if (!response.ok) {

@@ -5,11 +5,11 @@ import logging
 
 from database.db_init import get_db
 from database.models import Project, Keyword, Position, Group, SearchEngineEnum
-from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate,
-                             ProjectOut, ClientProjectOut, PositionOut,
+from routers.schemas import (ProjectCreate, ProjectUpdate, KeywordUpdate, ProjectOut,
+                             PositionOutType, ClientProjectOut, PositionOut,
                              KeywordCreate, KeywordUpdate, KeywordOut,
                              IntervalSumOut, KeywordIntervals, GroupOut,
-                             GroupCreate, GroupUpdate)
+                             GroupCreate, GroupUpdate, KeywordIntervalsType)
 
 import aiohttp
 
@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 LK_SEO_KORENEV_API_KEY = os.getenv("LK_SEO_KORENEV_API_KEY", "")
-URL = "https://lk-seo.korenev.pro/api/get_data/projects"
 
 
 async def get_lk_seo_korenev_projects():
@@ -28,6 +27,8 @@ async def get_lk_seo_korenev_projects():
         payload = {
             "api_key": LK_SEO_KORENEV_API_KEY
         }
+
+        URL = "https://lk-seo.korenev.pro/api/get_data/projects"
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
             async with session.post(URL, headers=headers, json=payload) as response:
@@ -41,4 +42,60 @@ async def get_lk_seo_korenev_projects():
                 return lk_projects_processed
     except Exception as e:
         logger.error("Ошибка при получении проектов сервиса  lk-seo.korenev.pro %s", e)
+        return None
+
+
+async def get_positions_lk_seo_korenev(group_id, period, offset):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "api_key": LK_SEO_KORENEV_API_KEY,
+            "group_id": str(group_id),
+            "period": period,
+            "offset": offset
+        }
+
+        URL = "https://lk-seo.korenev.pro/api/get_data/positions"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
+            async with session.post(URL, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                results = data.get("positions")
+                lk_positions_processed = [PositionOutType(**pos_dict) for pos_dict in results]
+
+                return lk_positions_processed
+    except Exception as e:
+        logger.error("Ошибка при получении позиций сервиса  lk-seo.korenev.pro %s", e)
+        return None
+
+
+async def get_positions_intervals_lk_seo_korenev(group_id, period, offset):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "api_key": LK_SEO_KORENEV_API_KEY,
+            "group_id": str(group_id),
+            "period": period,
+            "offset": offset
+        }
+
+        URL = "https://lk-seo.korenev.pro/api/get_data/intervals"
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
+            async with session.post(URL, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                results = data.get("intervals")
+
+                print(results[0])
+                lk_intervals_processed = [KeywordIntervalsType(**pos_dict) for pos_dict in results]
+
+                return lk_intervals_processed
+    except Exception as e:
+        logger.error("Ошибка при получении интервалов сервиса  lk-seo.korenev.pro %s", e)
         return None

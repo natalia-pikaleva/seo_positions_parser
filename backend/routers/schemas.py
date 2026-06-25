@@ -114,6 +114,11 @@ class PositionOut(BaseModel):
         orm_mode = True
 
 
+class PositionOutType(PositionOut):
+    id: str
+    keyword_id: str
+
+
 class IntervalSumOut(BaseModel):
     start_date: date  # Начало полного интервала (для подсчёта суммы)
     end_date: date  # Конец полного интервала (для подсчёта суммы)
@@ -132,6 +137,10 @@ class IntervalSumOut(BaseModel):
 class KeywordIntervals(BaseModel):
     keyword_id: UUID
     intervals: List[IntervalSumOut]
+
+
+class KeywordIntervalsType(KeywordIntervals):
+    keyword_id: str
 
 
 # --- Project ---
@@ -202,6 +211,7 @@ class PasswordChangeRequest(BaseModel):
 class UserRole(str, Enum):
     admin = "admin"
     employee = "manager"
+
 
 class ManagerCreateRequest(BaseModel):
     username: str
