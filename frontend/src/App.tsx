@@ -66,6 +66,7 @@ function App() {
   const [copyModalVisible, setCopyModalVisible] = useState(false);
   const [registerPassword, setRegisterPassword] = useState<string | null>(null);
   const [registerUsername, setRegisterUsername] = useState<string | null>(null);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
 
   // Инициализация данных и авторизации
@@ -73,6 +74,7 @@ function App() {
 	const init = async () => {
 	    setLoading(true);
 	    setError(null);
+	    setProjectsLoading(true):
 	    try {
 	      const savedToken = localStorage.getItem('token');
 	      if (savedToken) {
@@ -115,6 +117,7 @@ function App() {
 	    } finally {
 	      setLoading(false);
 	      setAuthLoading(false);
+	      setProjectsLoading(false);
 	    }
 	  };
 
@@ -392,6 +395,7 @@ function App() {
             onUpdateProject={handleUpdateProject}
             onProjectGroupLoaded={handleProjectGroupLoaded}
             onDeleteProject={handleDeleteProject}
+            projectsLoading={projectsLoading}
           />
 
           <ModalsManager

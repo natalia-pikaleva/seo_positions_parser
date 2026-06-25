@@ -13,6 +13,7 @@ interface DashboardProps {
     isClientView?: boolean;
     onDeleteProject: (projectId: string) => void;
     onBackToProjectGroups: () => void;
+    projectsLoading: boolean;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -21,7 +22,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     refreshProjects,
     isClientView = false,
     onDeleteProject,
-    onBackToProjectGroups
+    onBackToProjectGroups,
+    projectsLoading
 }) => {
     const [modalOpen, setModalOpen] = useState(false);
     const [taskStatus, setTaskStatus] = useState<any>(null);
@@ -278,7 +280,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                 </div>*/}
                 <div className="p-2 md:p-6">
-                    {projects.length === 0 ? (
+                    {projectsLoading && (
+                        <div className="text-center py-12">
+                            <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                <BarChart className="w-12 h-12 text-gray-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Загружаем проекты</h3>
+                            <p className="text-gray-600 mb-6">Это может занять некоторое время</p>
+                        </div>
+                    )}
+
+                    {!projectsLoading && projects.length === 0 && (
                         <div className="text-center py-12">
                             <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                                 <BarChart className="w-12 h-12 text-gray-400" />
@@ -292,7 +304,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 Создать проект
                             </button>
                         </div>
-                    ) : (
+                    )}
+
+                    {!projectsLoading && projects.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {projects.map(project => {
                                 // Проверяем, все ли группы проекта заархивированы

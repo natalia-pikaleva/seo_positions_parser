@@ -24,6 +24,7 @@ interface MainContentProps {
     onUpdateProject: (project: Project) => Promise<void>;
     onDeleteProject: (projectId: string) => void;
     onProjectGroupLoaded: (project: Project) => void;
+    projectsLoading: boolean;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
@@ -43,6 +44,7 @@ export const MainContent: React.FC<MainContentProps> = ({
     onUpdateProject,
     onDeleteProject,
     onProjectGroupLoaded,
+    projectsLoading
 }) => {
 
     return (
@@ -56,6 +58,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     isClientView={false}
                     onDeleteProject={onDeleteProject}
                     onBackToProjectGroups={onBackToProjectGroups}
+                    projectsLoading={projectsLoading}
                 />
             )}
 
