@@ -155,6 +155,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         }
                     }}
                     onBackToProjectGroups={handleBackToGroups}
+                    owner={selectedProject.owner}
                 />
             </div>
         );

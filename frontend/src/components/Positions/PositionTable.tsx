@@ -31,6 +31,7 @@ interface PositionTableProps {
     groups: Group[];
     onBackToProjectGroups?: () => void;
     refreshProject?: () => Promise<Project | null>;
+    owner: string;
 }
 
 function getDatesForCurrentMonth(offset: number): Date[] {
@@ -99,7 +100,8 @@ export const PositionTable: React.FC<PositionTableProps> = ({
     domain,
     groups,
     onBackToProjectGroups,
-    refreshProject
+    refreshProject,
+    owner
 }) => {
     const [periodOffset, setPeriodOffset] = useState(0);
     const [filter, setFilter] = useState<FilterOptions>({ period: 'month' });
@@ -146,7 +148,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
             if (isClientView && groups && groups.length > 0) {
                 try {
                     const results = await Promise.all(
-                        groups.map(g => fetchPositions(g.id, filter.period, periodOffset))
+                        groups.map(g => fetchPositions(g.id, filter.period, periodOffset, owner))
                     );
                     setPositions(results.flat());
                 } catch (error) {
@@ -155,7 +157,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
                 }
             } else if (group?.id) {
                 try {
-                    const data = await fetchPositions(group.id, filter.period, periodOffset);
+                    const data = await fetchPositions(group.id, filter.period, periodOffset, owner);
                     setPositions(data);
                 } catch (error) {
                     console.error('Ошибка загрузки позиций', error);
@@ -172,7 +174,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
             try {
                 // Запросы по всем группам, результат - массив data для каждой группы
                 const results = await Promise.all(
-                    groups.map(g => fetchPositionsIntervals(g.id, filter.period, periodOffset))
+                    groups.map(g => fetchPositionsIntervals(g.id, filter.period, periodOffset, owner))
                 );
 
                 // Формируем общий intervalSums
@@ -230,7 +232,7 @@ export const PositionTable: React.FC<PositionTableProps> = ({
         } else if (group?.id) {
             // Твоя текущая реализация для одиночной группы — можно оставить как есть
             try {
-                const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset);
+                const data = await fetchPositionsIntervals(group.id, filter.period, periodOffset, owner);
 
                 const sumsMap: Record<string, Record<string, IntervalSumData>> = {};
                 data.forEach(({ keyword_id, intervals }) => {
